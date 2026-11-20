@@ -346,7 +346,9 @@ function renderSuppliers() {
   const card = $('supcard'), box = $('sups');
   const b2 = files.filter(f => f.kind === 'GSTR-2B');
   const pur = b2.length ? registerRows($('fy').value, true).purchases : undefined;
-  const sug = pur ? supplierSuggestions(pur, suppliersFrom2B(b2.map(f => f.json))) : [];
+  const sup2b = b2.length ? suppliersFrom2B(b2.map(f => f.json)) : new Map();
+  const sug = pur ? supplierSuggestions(pur, sup2b) : [];
+  const allSup = [...sup2b.values()].sort((a, b) => (a.name || a.gstin).localeCompare(b.name || b.gstin));
   const exact = sug.filter(x => x.exact), approx = sug.filter(x => !x.exact);
   card.style.display = sug.length ? '' : 'none';
   if (!sug.length) { box.innerHTML = ''; return; }
@@ -354,25 +356,30 @@ function renderSuppliers() {
   const pct = (x: number) => `${Math.round(x * 100)}%`;
   const rowsHtml = approx.map(x => {
     const conf = al[x.key];
-    const cur = conf ?? supPick.get(x.key) ?? (x.cands[0]?.gstin || '');
+    const cur = conf || supPick.get(x.key) || (x.cands[0]?.gstin || '');
     const strong = x.cands[0] && (x.cands[0].invHits > 0 || x.cands[0].score >= 0.9);
-    const opts = x.cands.map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(c.name || c.gstin)} · ${c.gstin} · ${pct(c.score)}${c.invHits ? ` · ${c.invHits} invoice no. match` : ''}</option>`).join('');
+    const candSet = new Set(x.cands.map(c => c.gstin));
+    // suggestions first, then every other 2B supplier so the user can pair names the system did not suggest
+    const opts = (x.cands.length ? '' : `<option value="" ${cur ? '' : 'selected'}>— pick the supplier in 2B —</option>`)
+      + (x.cands.length ? `<optgroup label="Suggested">${x.cands.map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(c.name || c.gstin)} · ${c.gstin} · ${pct(c.score)}${c.invHits ? ` · ${c.invHits} invoice no. match` : ''}</option>`).join('')}</optgroup>` : '')
+      + `<optgroup label="All suppliers in 2B">${allSup.filter(c => !candSet.has(c.gstin)).map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(c.name || c.gstin)} · ${c.gstin}</option>`).join('')}</optgroup>`;
     const state = conf ? `<span class="tag ok-tag">Confirmed</span> <button class="link" data-undo="${esc(x.key)}">undo</button>`
       : conf === '' ? `<span class="tag no-tag">No match</span> <button class="link" data-undo="${esc(x.key)}">undo</button>`
-      : x.cands.length ? `<button class="small" data-ok="${esc(x.key)}">Confirm</button> <button class="link" data-no="${esc(x.key)}">Not this supplier</button>` : '<span class="muted">No similar name in 2B</span>';
+      : `<button class="small" data-ok="${esc(x.key)}">Confirm</button> <button class="link" data-no="${esc(x.key)}">${x.cands.length ? 'Not this supplier' : 'Not in 2B'}</button>`;
     return `<tr class="${conf ? 'confirmed' : ''}"><td><b>${esc(x.name)}</b><div class="muted">${x.docs} invoice(s) · ITC ${fmtN(x.tax)}</div></td>
-      <td>${x.cands.length ? `<select data-pick="${esc(x.key)}" ${conf !== undefined ? 'disabled' : ''}>${opts}</select>${strong && conf === undefined ? '<div class="ok-text" style="font-size:12px">Strong match</div>' : ''}` : '—'}</td><td class="act">${state}</td></tr>`;
+      <td><select data-pick="${esc(x.key)}" ${conf !== undefined ? 'disabled' : ''}>${opts}</select>${strong && conf === undefined ? '<div class="ok-text" style="font-size:12px">Strong match</div>' : !x.cands.length && conf === undefined ? '<div class="muted" style="font-size:12px">No similar name found: pick the supplier yourself if it is in 2B</div>' : ''}</td><td class="act">${state}</td></tr>`;
   }).join('');
   const pending = approx.filter(x => al[x.key] === undefined && x.cands.length);
+  const unsuggested = approx.filter(x => !x.cands.length).length;
   const strongPending = pending.filter(x => x.cands[0].invHits > 0 || x.cands[0].score >= 0.9);
   box.innerHTML = `${exact.length ? `<p class="ok-text" style="margin:0 0 10px">${exact.length} supplier name(s) match a 2B supplier exactly and get its GSTIN automatically.</p>` : ''}
-    ${approx.length ? `<div class="row" style="justify-content:space-between;margin-bottom:10px"><span class="muted">${approx.length} supplier name(s) without a GSTIN are close to, but not the same as, a name in 2B. Pick the right supplier and confirm. Confirmed names are remembered for next time.</span>
+    ${approx.length ? `<div class="row" style="justify-content:space-between;margin-bottom:10px"><span class="muted">${approx.length} supplier name(s) without a GSTIN don't exactly match a name in 2B${unsuggested ? ` (${unsuggested} with no similar name)` : ''}. Pick the right supplier (suggestions first, or any supplier in 2B) and confirm. Confirmed names are remembered for next time.</span>
       ${strongPending.length ? `<button class="small" id="supAllStrong">Confirm ${strongPending.length} strong match(es)</button>` : ''}</div>
       <div class="tablewrap"><table class="sup"><tr><th>Name in books</th><th>Supplier in GSTR-2B</th><th></th></tr>${rowsHtml}</table></div>` : ''}`;
   const setAlias = (k: string, g: string | null) => { const a = aliasStore(); if (g === null) delete a[k]; else a[k] = g; store.set(ALIAS_KEY, a); renderSuppliers(); };
   const pickOf = (k: string) => supPick.get(k) ?? approx.find(x => x.key === k)?.cands[0]?.gstin ?? '';
   box.querySelectorAll('select[data-pick]').forEach((el: any) => (el.onchange = () => supPick.set(el.dataset.pick, el.value)));
-  box.querySelectorAll('button[data-ok]').forEach((el: any) => (el.onclick = () => setAlias(el.dataset.ok, pickOf(el.dataset.ok))));
+  box.querySelectorAll('button[data-ok]').forEach((el: any) => (el.onclick = () => { const g = pickOf(el.dataset.ok); if (g) setAlias(el.dataset.ok, g); }));
   box.querySelectorAll('button[data-no]').forEach((el: any) => (el.onclick = () => setAlias(el.dataset.no, '')));
   box.querySelectorAll('button[data-undo]').forEach((el: any) => (el.onclick = () => setAlias(el.dataset.undo, null)));
   const all = box.querySelector('#supAllStrong') as any;
