@@ -1,0 +1,67 @@
+{
+ "files": [
+  "gstr2b_102026_synthetic.json | GSTR-2B | 27AAACD0000A1Z9 | 102026 | 2026-27 | ",
+  "tally_columnar_purchase.xlsx | Register |  |  |  | map columns below"
+ ],
+ "registers": [
+  {
+   "file": "tally_columnar_purchase.xlsx",
+   "sheet": "Purchase Register",
+   "headerRow": 7,
+   "kind": "purchases",
+   "columns": {
+    "date": "Supplier Invoice Date",
+    "no": "Supplier Invoice No.",
+    "party": "Particulars",
+    "gstin": "GSTIN/UIN",
+    "gross": "Gross Total",
+    "cess": "Input Cess",
+    "cgst": "Input CGST @ 9% + Input CGST @ 6%",
+    "sgst": "Input SGST @ 9% + Input SGST @ 6%",
+    "igst": "Input IGST @ 18%",
+    "taxable": "Purchase @ 18% (Local) + Purchase @ 12% (Local) + Purchase @ 18% (Interstate) + Freight Inward + Packing Charges + Professional Charges"
+   },
+   "stats": {
+    "lines": 6,
+    "docs": 6,
+    "skipped": 1,
+    "badDates": 0,
+    "outsideFy": 0,
+    "credit": 0,
+    "grossOff": 0
+   }
+  }
+ ],
+ "purchases": {
+  "stats": {
+   "matched": 4,
+   "booksOnly": 1,
+   "twoBOnly": 2,
+   "valueDiff": 0
+  },
+  "lines": [
+   "In books, not in 2B |  | 29AACCD1357P1ZR | DTC-7781 | ",
+   "In 2B, not in books |  | 27AABCR9999Q1Z1 |  | RT-77",
+   "In 2B, not in books |  | 27AAKPR4321J1Z3 |  | 455",
+   "Matched | Invoice no. | 24AAKFG2468H1ZQ | GP/2026/0567 | GP/2026/0567",
+   "Matched | Invoice no. | 27AABCS1234F1Z5 | SST/26-27/1042 | SST/26-27/1042",
+   "Matched | Invoice no. | 27AAEFM9753K1Z8 | MA/112 | MA/112",
+   "Matched | Invoice no. | 27AAFCK5678M1Z2 | KP-889 | KP-889",
+   "Not compared (RCM / ISD / imports) | No GST |  | 455 | "
+  ]
+ },
+ "itc": {
+  "periods": [
+   "102026"
+  ],
+  "position": {
+   "available": [17493, 17493, 13599.07, 0],
+   "books": [17115, 17115, 17199.07, 1000],
+   "claimable": [17115, 17115, 13599.07, 0],
+   "booksOnly": [0, 0, 3600, 1000],
+   "twoBOnly": [378, 378, 0, 0],
+   "valueDiff": [0, 0, 0, 0]
+  },
+  "warnings": []
+ }
+}

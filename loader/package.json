@@ -1,15 +1,23 @@
 {
-  "name": "loader",
+  "name": "gst-reco-loader",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "description": "James & James GST reconciliation loader: one offline HTML page",
+  "type": "module",
+  "license": "UNLICENSED",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
+    "test": "tsx test/run.ts",
+    "test:update": "tsx test/cases.ts --update",
+    "check": "npm run format:check && npm run typecheck && npm test && npm run build",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\" index.html",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\" index.html"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
+    "@types/node": "^22.20.5",
+    "prettier": "^3.3.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^6.4.6",
@@ -18,6 +26,5 @@
   "dependencies": {
     "jszip": "^3.10.2",
     "pdfjs-dist": "^4.10.38"
-  },
-  "type": "module"
+  }
 }

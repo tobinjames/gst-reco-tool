@@ -1,17 +1,69 @@
 // Small multi-sheet .xlsx writer: values, formulas (with cached values), a fixed set of J&J styles, column widths, frozen panes, autofilter.
 // Excel 2010+ compatible; formulas are recalculated on open.
 import JSZip from 'jszip';
+import { xmlEsc } from './util';
 
-export type Style = 'title' | 'sub' | 'hdr' | 'num' | 'numB' | 'numTot' | 'date' | 'note' | 'bold' | 'wrap' | 'sec' | 'ok' | 'bad' | 'link';
-const STYLE_ID: Record<Style, number> = { title: 1, sub: 2, hdr: 3, num: 4, numB: 5, numTot: 6, date: 7, note: 8, bold: 9, wrap: 10, sec: 11, ok: 12, bad: 13, link: 14 };
-export interface CellObj { v?: string | number | null; f?: string; s?: Style }
+export type Style =
+  | 'title'
+  | 'sub'
+  | 'hdr'
+  | 'num'
+  | 'numB'
+  | 'numTot'
+  | 'date'
+  | 'note'
+  | 'bold'
+  | 'wrap'
+  | 'sec'
+  | 'ok'
+  | 'bad'
+  | 'link';
+const STYLE_ID: Record<Style, number> = {
+  title: 1,
+  sub: 2,
+  hdr: 3,
+  num: 4,
+  numB: 5,
+  numTot: 6,
+  date: 7,
+  note: 8,
+  bold: 9,
+  wrap: 10,
+  sec: 11,
+  ok: 12,
+  bad: 13,
+  link: 14,
+};
+export interface CellObj {
+  v?: string | number | null;
+  f?: string;
+  s?: Style;
+}
 export type C = string | number | null | undefined | CellObj;
-export interface SheetSpec { name: string; rows: C[][]; widths?: number[]; freeze?: { row: number; col?: number }; filter?: { row: number; cols: number }; tab?: string }
+export interface SheetSpec {
+  name: string;
+  rows: C[][];
+  widths?: number[];
+  freeze?: { row: number; col?: number };
+  filter?: { row: number; cols: number };
+  tab?: string;
+}
 
-const xmlEsc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
-export const col = (i: number) => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+export const col = (i: number) => {
+  let s = '';
+  i++;
+  while (i) {
+    const m = (i - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    i = Math.floor((i - 1) / 26);
+  }
+  return s;
+};
 /** dd-mm-yyyy → Excel date serial */
-export const serial = (d: string) => { const m = d.match(/^(\d{2})-(\d{2})-(\d{4})$/); return m ? Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1]) - Date.UTC(1899, 11, 30)) / 86400000) : null; };
+export const serial = (d: string) => {
+  const m = d.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  return m ? Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1]) - Date.UTC(1899, 11, 30)) / 86400000) : null;
+};
 
 /** Excel refuses (and "repairs") a cell with more than 32,767 characters */
 const MAX_CELL = 32000;
@@ -33,9 +85,16 @@ function cellXml(ref: string, c: C) {
 function sheetXml(sh: SheetSpec) {
   const widths = sh.widths || (sh.rows[0] || []).map(() => 14);
   const fr = sh.freeze;
-  const pane = fr ? `<pane${fr.col ? ` xSplit="${fr.col}"` : ''}${fr.row ? ` ySplit="${fr.row}"` : ''} topLeftCell="${col(fr.col || 0)}${(fr.row || 0) + 1}" activePane="${fr.row && fr.col ? 'bottomRight' : fr.row ? 'bottomLeft' : 'topRight'}" state="frozen"/>` : '';
-  const rows = sh.rows.map((r, i) => `<row r="${i + 1}">${(r || []).map((c, j) => cellXml(col(j) + (i + 1), c)).join('')}</row>`).join('');
-  const af = sh.filter && sh.rows.length > sh.filter.row ? `<autoFilter ref="A${sh.filter.row}:${col(sh.filter.cols - 1)}${sh.rows.length}"/>` : '';
+  const pane = fr
+    ? `<pane${fr.col ? ` xSplit="${fr.col}"` : ''}${fr.row ? ` ySplit="${fr.row}"` : ''} topLeftCell="${col(fr.col || 0)}${(fr.row || 0) + 1}" activePane="${fr.row && fr.col ? 'bottomRight' : fr.row ? 'bottomLeft' : 'topRight'}" state="frozen"/>`
+    : '';
+  const rows = sh.rows
+    .map((r, i) => `<row r="${i + 1}">${(r || []).map((c, j) => cellXml(col(j) + (i + 1), c)).join('')}</row>`)
+    .join('');
+  const af =
+    sh.filter && sh.rows.length > sh.filter.row
+      ? `<autoFilter ref="A${sh.filter.row}:${col(sh.filter.cols - 1)}${sh.rows.length}"/>`
+      : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${sh.tab ? `<sheetPr><tabColor rgb="FF${sh.tab}"/></sheetPr>` : ''}<sheetViews><sheetView workbookViewId="0" showGridLines="0">${pane}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="13.5"/>
 <cols>${widths.map((w, j) => `<col min="${j + 1}" max="${j + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rows}</sheetData>${af}<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToHeight="0" paperSize="9"/></worksheet>`;
@@ -68,13 +127,50 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleShe
 export async function writeBook(sheets: SheetSpec[], defined: { name: string; ref: string }[] = []): Promise<Uint8Array> {
   const z = new JSZip();
   const n = sheets.length;
-  z.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`);
-  z.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
-  const filters = sheets.map((s, i) => s.filter && s.rows.length > s.filter.row ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xmlEsc(s.name)}'!$A$${s.filter.row}:$${col(s.filter.cols - 1)}$${s.rows.length}</definedName>` : '').join('');
+  z.file(
+    '[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+  );
+  z.file(
+    '_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+  );
+  const filters = sheets
+    .map((s, i) =>
+      s.filter && s.rows.length > s.filter.row
+        ? `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">'${xmlEsc(s.name)}'!$A$${s.filter.row}:$${col(s.filter.cols - 1)}$${s.rows.length}</definedName>`
+        : '',
+    )
+    .join('');
   const names = defined.map(d => `<definedName name="${xmlEsc(d.name)}">${xmlEsc(d.ref)}</definedName>`).join('');
-  z.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets>${sheets.map((s, i) => `<sheet name="${xmlEsc(s.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>${filters || names ? `<definedNames>${filters}${names}</definedNames>` : ''}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`);
-  z.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+  z.file(
+    'xl/workbook.xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView activeTab="0"/></bookViews><sheets>${sheets.map((s, i) => `<sheet name="${xmlEsc(s.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>${filters || names ? `<definedNames>${filters}${names}</definedNames>` : ''}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>`,
+  );
+  z.file(
+    'xl/_rels/workbook.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+  );
   z.file('xl/styles.xml', STYLES);
   sheets.forEach((s, i) => z.file(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)));
   return await z.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+}
+
+/** One-sheet download (Review step "Download this view"): optional title lines, then rows[0] as the header row, frozen and filtered */
+export function simpleXlsx(sheetName: string, rows: any[][], title: string[] = []): Promise<Uint8Array> {
+  const top: C[][] = title.length ? [...title.map((t, i) => [{ v: t, s: (i === 0 ? 'title' : 'sub') as Style }]), []] : [];
+  const header: C[] = (rows[0] || []).map(v => ({ v, s: 'hdr' as Style }));
+  const widths = (rows[0] || []).map((_, j) =>
+    Math.min(60, Math.max(10, ...rows.slice(0, 500).map(r => String(r[j] ?? '').length + 2))),
+  );
+  const hdrRow = top.length + 1;
+  return writeBook([
+    {
+      name: sheetName,
+      rows: [...top, header, ...rows.slice(1)],
+      widths,
+      freeze: { row: hdrRow },
+      filter: rows.length > 1 ? { row: hdrRow, cols: (rows[0] || []).length } : undefined,
+    },
+  ]);
 }
