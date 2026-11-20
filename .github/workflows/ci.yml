@@ -1,0 +1,36 @@
+# Runs on every pull request and on main: type check, all tests, and the build.
+# The built Loader (one HTML file) is attached to the run as "GST_Reco_Loader" for download.
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: loader
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: loader/package-lock.json
+      - run: npm ci
+      - name: Formatting
+        run: npm run format:check
+      - name: Type check
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GST_Reco_Loader
+          path: loader/dist/index.html
+          retention-days: 30
