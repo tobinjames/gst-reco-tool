@@ -11,6 +11,7 @@ import { isPortal9, processPortal9 } from './portal9';
 import { RawRow, Warn, fyOfDate, fyOfPeriod, fyShift, r2 } from './util';
 import { Reader, Workbook, colLetter as colLetterOf } from './xlsx';
 import { RAW_SHEETS, fingerprint, seal, sealLines, readRows } from './integrity';
+import { fixReconLayout, monthRows, salesMonthRows, summaryCells, supplierRows } from './reconsheets';
 import { DEFAULT_MATCH, KeepApart, Manual, MatchOptions, describeMatch, reconPurchases, reconSales } from './recon';
 
 /** what the user decided in the Loader's Review step: manual matches (Match codes) and documents kept apart (code X) */
@@ -196,6 +197,7 @@ export async function buildWorkbook(template: Uint8Array, files: InFile[], fy: s
 
   // ---- reconciliation (needs books + returns; books come from the mapped registers or from the dropped workbook)
   const baseRd = base ? await Reader.open(base.bytes!) : null;
+  await fixReconLayout(wb, baseRd);
   const rawOf = async (sh: string) => written[sh] ?? (baseRd && baseRd.has(sh) ? await readRows(baseRd, sh, 6) : []);
   const booksOf = async (sh: string, given?: any[][]) => given ?? (baseRd && baseRd.has(sh) ? await readRows(baseRd, sh, 6) : []);
   const { remarks, manual, keepApart } = await readReconState(baseRd);
@@ -211,7 +213,7 @@ export async function buildWorkbook(template: Uint8Array, files: InFile[], fy: s
       const pr = reconPurchases(bp, raw2b, fy, ny, remarks, dp?.manual ?? manual.Recon_Purchases, notes, mo, dp?.keepApart ?? keepApart.Recon_Purchases);
       notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Purchases', msg: m }));
       await wb.writeRows('Recon_Purchases', 16, pr.rows, true);
-      await wb.writeRows('Recon_Suppliers', 6, pr.supRows, true);
+      await wb.writeRows('Recon_Suppliers', 6, supplierRows(pr.supRows, mo.tol), true);
       await wb.setCells('Recon_Purchases', { G3: `Tax = CGST + SGST + IGST + cess. ${describeMatch(mo)}` });
       recon.purchases = pr.stats;
     } else if (bp.length || raw2b.length) warns.push({ level: 'info', file: '', msg: `Purchase reconciliation skipped: ${bp.length ? 'no GSTR-2B data' : 'no purchase register'} yet` });
@@ -222,7 +224,7 @@ export async function buildWorkbook(template: Uint8Array, files: InFile[], fy: s
       await wb.setCells('Recon_Sales', { G3: describeMatch(mo) });
       notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Sales', msg: m }));
       await wb.writeRows('Recon_Sales', 16, sr.rows, true);
-      await wb.writeRows('Recon_Sales_Monthly', 6, sr.monthly, true);
+      await wb.writeRows('Recon_Sales_Monthly', 6, salesMonthRows(sr.monthly), true);
       recon.sales = sr.stats;
     } else if (bs.length || raw1.length) warns.push({ level: 'info', file: '', msg: `Sales reconciliation skipped: ${bs.length ? 'no GSTR-1 data' : 'no sales register'} yet` });
   }
@@ -278,6 +280,7 @@ export async function buildItc(template: Uint8Array, files: InFile[], fy: string
   const base = files.find(f => f.kind === 'Workbook' && f.note === 'ITC reconciliation workbook');
   const wb = await Workbook.open(base?.bytes ?? template);
   const baseRd = base ? await Reader.open(base.bytes!) : null;
+  await fixReconLayout(wb, baseRd);
   const gstins = new Set(files.filter(f => f.gstin).map(f => f.gstin));
   if (gstins.size > 1) warns.push({ level: 'error', file: '', msg: `Files belong to different GSTINs: ${[...gstins].join(', ')}` });
   // 2B
@@ -308,7 +311,7 @@ export async function buildItc(template: Uint8Array, files: InFile[], fy: string
     await wb.setCells('Recon_Purchases', { G3: `Tax = CGST + SGST + IGST + cess. ${describeMatch(mo)}` });
     notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Purchases', msg: m }));
     await wb.writeRows('Recon_Purchases', 16, pr.rows, true);
-    await wb.writeRows('Recon_Suppliers', 6, pr.supRows, true);
+    await wb.writeRows('Recon_Suppliers', 6, supplierRows(pr.supRows, mo.tol), true);
     recon = pr.stats;
     // ITC position by head (CGST, SGST, IGST, Cess)
     const H = [0, 1, 2, 3], B = (r: any[], i: number) => +r[9 + i] || 0, R = (r: any[], i: number) => +r[14 + i] || 0;
@@ -320,9 +323,8 @@ export async function buildItc(template: Uint8Array, files: InFile[], fy: string
     position.booksOnly = sum(r => r[0] === 'In books, not in 2B', B);
     position.twoBOnly = sum(r => r[0] === 'In 2B, not in books', R);
     position.valueDiff = sum(r => r[0] === 'Matched - value difference', (r, i) => B(r, i) - R(r, i));
-    const cells: Record<string, any> = {};
-    ['available', 'books', 'claimable', 'booksOnly', 'twoBOnly', 'valueDiff'].forEach((k, j) => position[k].forEach((v, i) => (cells[`${'CDEF'[i]}${12 + j}`] = v)));
-    await wb.setCells('Summary', cells);
+    // the Summary amounts are formulas over Recon_Purchases (position[] is the same figure, for the Loader's own display)
+    await wb.setCells('Summary', summaryCells());
     // month-wise: 2B side by 2B period, books side by invoice date
     const tx = (r: any[], o: number) => [0, 1, 2, 3].reduce((a, i) => a + (+r[o + i] || 0), 0);
     const per = (p: string) => p.replace('/', '');
@@ -340,9 +342,10 @@ export async function buildItc(template: Uint8Array, files: InFile[], fy: string
     }
     const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const keys = [...mm.keys()].sort((a, b) => (a.slice(2) + a.slice(0, 2)).localeCompare(b.slice(2) + b.slice(0, 2)));
-    const mrows = keys.map(k => [`${MN[+k.slice(0, 2) - 1]} ${k.slice(2)}`, ...mm.get(k)!.map(r2)]);
-    if (mrows.length > 1) mrows.push(['Total', ...[1, 2, 3, 4, 5].map(j => r2(mrows.reduce((a, r) => a + (r[j] as number), 0)))]);
-    if (wb.has('Month_wise')) await wb.writeRows('Month_wise', 6, mrows, true);
+    if (wb.has('Month_wise')) {
+      await wb.writeRows('Month_wise', 6, monthRows(keys, k => `${MN[+k.slice(0, 2) - 1]} ${k.slice(2)}`), true);
+      await wb.setCells('Month_wise', { H5: 'Period (used by the formulas)' });
+    }
   }
   const fmtP = (p: string) => `${p.slice(0, 2)}/${p.slice(2)}`;
   const legal = extra.legalName || (baseRd ? String((await baseRd.get('Summary', 'C4')).v ?? '') : '');

@@ -1,7 +1,8 @@
 // Minimal, style-preserving writer for the workbook template (edits sheet XML inside the .xlsx zip)
 import JSZip from 'jszip';
 
-type V = string | number | null | undefined;
+/** a value, or { f } for a formula (written without a cached value; the workbook recalculates on open) */
+export type V = string | number | null | undefined | { f: string };
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
 const colNum = (c: string) => c.split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
@@ -10,6 +11,7 @@ export const colLetter = (n: number) => { let s = ''; while (n > 0) { const m = 
 function cellXml(ref: string, v: V, style?: string) {
   const s = style ? ` s="${style}"` : '';
   if (v === null || v === undefined || v === '') return `<c r="${ref}"${s}/>`;
+  if (typeof v === 'object') return `<c r="${ref}"${s}><f>${esc(v.f.replace(/^=/, ''))}</f></c>`;
   if (typeof v === 'number' && isFinite(v)) return `<c r="${ref}"${s}><v>${v}</v></c>`;
   return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${esc(String(v))}</t></is></c>`;
 }
@@ -118,7 +120,7 @@ export class Workbook {
     this.xml.set(p, xml);
   }
   /** set individual cells, keeping the existing cell style */
-  async setCells(name: string, cells: Record<string, V>) {
+  async setCells(name: string, cells: Record<string, V>, styleOf: Record<string, string | undefined> = {}) {
     const p = await this.get(name);
     const { head, rows, tail } = this.split(this.xml.get(p)!);
     const byRow = new Map<number, string>();
@@ -137,7 +139,7 @@ export class Workbook {
       for (const c of cellsInRow) map.set(c.match(/\br="([A-Z]+\d+)"/)![1], c);
       for (const [ref, v] of list) {
         const old = map.get(ref);
-        const style = old?.match(/\bs="(\d+)"/)?.[1];
+        const style = ref in styleOf ? styleOf[ref] : old?.match(/\bs="(\d+)"/)?.[1];
         map.set(ref, cellXml(ref, v, style));
       }
       const sorted = [...map.entries()].sort((a, b) => colNum(a[0].replace(/\d+/, '')) - colNum(b[0].replace(/\d+/, ''))).map(e => e[1]);
@@ -146,6 +148,12 @@ export class Workbook {
     }
     const all = [...byRow.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]);
     this.xml.set(p, head + all.join('') + tail);
+  }
+  /** style index of each cell (as the sheet stands now) */
+  async styles(name: string, refs: string[]): Promise<Record<string, string | undefined>> {
+    const xml = this.xml.get(await this.get(name))!, out: Record<string, string | undefined> = {};
+    for (const ref of refs) out[ref] = xml.match(new RegExp(`<c r="${ref}"[^>]*?\\bs="(\\d+)"`))?.[1];
+    return out;
   }
   async save(): Promise<Uint8Array> {
     // force full recalculation on open, and drop stale cached formula results everywhere

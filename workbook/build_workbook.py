@@ -741,8 +741,8 @@ checks.append(('9C 7G - un-reconciled taxable turnover', f"='GSTR-9C'!C{R9C['7G'
 checks.append(('9C 9R - un-reconciled tax (total of heads)', f"=SUM('GSTR-9C'!D{R9C['9R']}:G{R9C['9R']})", 'info', 'Explain in 9C Table 10'))
 checks.append(('9C 12F - un-reconciled ITC', f"='GSTR-9C'!C{R9C['12F']}", 'info', 'Explain in 9C Table 13'))
 checks.append(('9C 12C vs GSTR-9 Table 13 (total tax)', f"='GSTR-9C'!C{R9C['12C']}-(" + '+'.join(g9('13', i) for i in range(1, 5)) + ')', 'info', 'ICAI TG: 12C should equal GSTR-9 Table 13'))
-checks.append(('Purchases in books, not in 2B - tax (Recon_Purchases)', "=Recon_Purchases!F12", 'info', 'Follow up with suppliers; ITC not in 2B cannot be availed (section 16(2)(aa))'))
-checks.append(('Purchases in 2B, not in books - tax (Recon_Purchases)', "=-Recon_Purchases!F13", 'info', 'Book the invoice, or report in 8E / 8F if not availed'))
+checks.append(('Purchases in books, not in 2B - tax (Recon_Purchases)', "=Recon_Purchases!F11", 'info', 'Follow up with suppliers; ITC not in 2B cannot be availed (section 16(2)(aa))'))
+checks.append(('Purchases in 2B, not in books - tax (Recon_Purchases)', "=-Recon_Purchases!F12", 'info', 'Book the invoice, or report in 8E / 8F if not availed'))
 checks.append(('Sales in books, not in GSTR-1 - taxable (Recon_Sales)', "=Recon_Sales!C10", 'info', 'Report through Table 10 / DRC-03 if tax unpaid'))
 checks.append(('Sales in GSTR-1, not in books - taxable (Recon_Sales)', "=Recon_Sales!D11", 'info', 'Check for missing entries in books'))
 checks.append(('Books_Sales rows without a valid GSTR-9 key', "=COUNTIF('Books_Sales'!$Q$6:$Q$20000,\"?\")", 'zero', 'Fix Supply Type / Doc Type on those rows'))
@@ -889,22 +889,26 @@ def recon_sheet(name, sub, headers, widths, num_cols, summary=None, start=16):
 
 def status_summary(statuses, status_col, sum_cols, labels):
     def f(ws):
-        cell(ws, 'A4', 'Status', f_hdr, fill_hdr, align=center)
-        cell(ws, 'B4', 'Count', f_hdr, fill_hdr, align=center)
+        # the summary must end above the table header (row 15): with 10 statuses it starts on row 3 and the sheet note moves beside the title
+        top = 4 if len(statuses) <= 9 else 3
+        if top == 3:
+            ws['C2'] = ws['A3'].value; ws['C2'].font = f_sub; ws['A3'] = None
+        cell(ws, f'A{top}', 'Status', f_hdr, fill_hdr, align=center)
+        cell(ws, f'B{top}', 'Count', f_hdr, fill_hdr, align=center)
         for j, lab in enumerate(labels):
-            cell(ws, f'{CL(3 + j)}4', lab, f_hdr, fill_hdr, align=center)
+            cell(ws, f'{CL(3 + j)}{top}', lab, f_hdr, fill_hdr, align=center)
         for i, st in enumerate(statuses):
-            r = 5 + i
+            r = top + 1 + i
             cell(ws, f'A{r}', st, f_bold if i == 0 else f_norm)
             cell(ws, f'B{r}', f'=COUNTIF(${status_col}$16:${status_col}${NREC},A{r})', fmt='#,##0')
             for j, sc in enumerate(sum_cols):
                 cell(ws, f'{CL(3 + j)}{r}', f'=SUMIF(${status_col}$16:${status_col}${NREC},$A{r},${sc}$16:${sc}${NREC})', fmt=NUM)
-        r = 5 + len(statuses)
+        r = top + 1 + len(statuses)
         cell(ws, f'A{r}', 'Total', f_bold, fill_sub)
-        cell(ws, f'B{r}', f'=SUM(B5:B{r - 1})', f_bold, fill_sub, '#,##0')
+        cell(ws, f'B{r}', f'=SUM(B{top + 1}:B{r - 1})', f_bold, fill_sub, '#,##0')
         for j in range(len(sum_cols)):
             col = CL(3 + j)
-            cell(ws, f'{col}{r}', f'=SUM({col}5:{col}{r - 1})', f_bold, fill_sub, NUM)
+            cell(ws, f'{col}{r}', f'=SUM({col}{top + 1}:{col}{r - 1})', f_bold, fill_sub, NUM)
         ws.column_dimensions['A'].width = max(ws.column_dimensions['A'].width or 0, 34)
     return f
 
