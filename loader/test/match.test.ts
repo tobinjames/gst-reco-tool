@@ -1,4 +1,4 @@
-// Matching options, manual matches and "keep apart" (code X). Run: npx tsx test/match.ts
+// Matching options, manual matches and "keep apart" (code X). Run: npx tsx test/match.test.ts (or npm test for all)
 import assert from 'assert/strict';
 import { DEFAULT_MATCH, MATCH_PRESETS, MatchOptions, reconPurchases } from '../src/recon';
 

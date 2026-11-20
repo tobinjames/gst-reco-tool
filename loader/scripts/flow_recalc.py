@@ -1,5 +1,5 @@
 """Recalculate the ledger-flow workbook in LibreOffice and compare every formula with the value the Loader cached.
-Usage: python3 flow_recalc.py <workbook.xlsx>   (needs soffice and openpyxl)
+Usage: python3 scripts/flow_recalc.py <workbook.xlsx>   (needs soffice and openpyxl)
 The cached values are removed first, so LibreOffice has to compute every formula itself."""
 import os, re, shutil, subprocess, sys, tempfile, zipfile
 from openpyxl import load_workbook

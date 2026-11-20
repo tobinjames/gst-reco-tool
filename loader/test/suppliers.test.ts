@@ -1,5 +1,5 @@
 // Supplier names: approximate matching of books names (no GSTIN) to GSTR-2B suppliers, applied only when confirmed.
-// Run: npx tsx test/suppliers.ts
+// Run: npx tsx test/suppliers.test.ts (or npm test for all)
 import { readFileSync } from 'fs';
 import assert from 'assert/strict';
 import { applyAliases, nameKey, nameScore, supplierSuggestions, suppliersFrom2B } from '../src/suppliers';

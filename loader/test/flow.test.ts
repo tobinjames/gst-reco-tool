@@ -1,5 +1,5 @@
 // GST ledger flow: readers + engine on the synthetic demo company (test/fixtures/ledgers, made by make_ledger_fixtures.py)
-// Run: npx tsx test/flow.ts
+// Run: npx tsx test/flow.test.ts (or npm test for all)
 import { readFileSync } from 'fs';
 import assert from 'assert/strict';
 import { readTable } from '../src/register';
@@ -8,7 +8,7 @@ import { accountsOf, guessAccount, isGstName, parseBooks } from '../src/flow/boo
 import { HEAD_KEYS, Inputs, bucketLabel, run, ymLabel } from '../src/flow/engine';
 
 const fx = (f: string) => new Uint8Array(readFileSync(new URL('./fixtures/ledgers/' + f, import.meta.url)));
-const portal = [];
+const portal: Inputs["portal"] = [];
 for (const f of ['demo_credit_ledger.csv', 'demo_cash_ledger.csv', 'demo_liability_register.csv']) {
   const p = parsePortal((await readTable(f, fx(f)))[0].rows);
   assert.deepEqual(p.problems, [], f + ' parses without balance breaks');
@@ -118,7 +118,7 @@ if (process.env.DBG) for (const x of r.monthly.filter(x => x.bucket === process.
 }
 console.log('flow: all checks passed', r.items.length, 'items');
 
-// workbook: written with cached values; test/flow_recalc.py recalculates it in LibreOffice and compares
+// workbook: written with cached values; scripts/flow_recalc.py recalculates it in LibreOffice and compares
 import { flowWorkbook } from '../src/flow/workbook';
 import { writeFileSync } from 'fs';
 const wbBytes = await flowWorkbook(r, { gstin: '32AAACJ1234K1Z5', legalName: 'DEMO TRADERS PRIVATE LIMITED', fy: '2025-26', from: '2025-04', to: '2026-03', builtAt: '20-11-2026', audit: [],

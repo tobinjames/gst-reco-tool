@@ -9,7 +9,7 @@ import { generate9 } from './gen9';
 import { Review } from './review';
 import { FlowTab } from './flow/ui';
 import { applyAliases, supplierSuggestions, suppliersFrom2B } from './suppliers';
-import { FieldDef, Mapping, PURCHASE_FIELDS, RegKind, RegSheet, SALES_FIELDS, colsOf, detectHeader, guessMappingFull, isMapped, looksColumnar, normalise, readTable, unusedAmountCols } from './register';
+import { FieldDef, Mapping, PURCHASE_FIELDS, RegKind, RegSheet, colsOf, fieldsOf, pickRegister, detectHeader, guessMappingFull, isMapped, looksColumnar, normalise, readTable, unusedAmountCols } from './register';
 
 // run pdf.js in the page itself (no separate worker file) so the tool works when opened straight from disk
 (globalThis as any).pdfjsWorker = pdfWorker;
@@ -265,21 +265,14 @@ async function gen(file: File) {
 // ---------- registers: column mapping
 interface RegState { sheets: RegSheet[]; sheet: number; header: number; kind: RegKind; map: Mapping; d: Record<string, string> }
 const regState = new Map<InFile, RegState>();
-const fieldsOf = (k: RegKind): FieldDef[] => k === 'sales' ? SALES_FIELDS : PURCHASE_FIELDS;
 const store = { get(k: string) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k: string, v: any) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } } };
 const sigOf = (st: RegState) => 'jjmap:' + st.kind + ':' + (st.sheets[st.sheet].rows[st.header] || []).map(v => String(v ?? '').trim().toLowerCase()).join('|');
 
 async function initReg(f: InFile) {
   const sheets = await readTable(f.name, f.bytes!);
-  // pick the sheet and kind that look most like a register
-  let best = 0, bestScore = -1, kind: RegKind = /purch|bill|vendor|supplier|expense|inward/i.test(f.name) ? 'purchases' : 'sales';
-  sheets.forEach((sh, i) => { const h = detectHeader(sh.rows, fieldsOf(kind)); const sc = Object.keys(guessMappingFull(sh.rows, h, fieldsOf(kind))).length; if (sc > bestScore) { bestScore = sc; best = i; } });
-  const sh = sheets[best];
-  const header = detectHeader(sh.rows, fieldsOf(kind));
-  const hdrTxt = (sh.rows[header] || []).join(' ').toLowerCase();
-  if (/supplier|vendor|bill/.test(hdrTxt) && !/customer/.test(hdrTxt)) kind = 'purchases';
-  const st: RegState = { sheets, sheet: best, header, kind, map: {}, d: {} };
-  st.map = store.get(sigOf(st)) || guessMappingFull(sh.rows, header, fieldsOf(kind));
+  const { sheet, header, kind } = pickRegister(f.name, sheets);
+  const st: RegState = { sheets, sheet, header, kind, map: {}, d: {} };
+  st.map = store.get(sigOf(st)) || guessMappingFull(sheets[sheet].rows, header, fieldsOf(kind));
   regState.set(f, st);
 }
 function remap(st: RegState) { st.map = store.get(sigOf(st)) || guessMappingFull(st.sheets[st.sheet].rows, st.header, fieldsOf(st.kind)); }

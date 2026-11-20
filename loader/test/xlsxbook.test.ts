@@ -1,5 +1,5 @@
 // xlsxbook: cells stay within Excel's limits (a longer cell makes Excel "repair" the file)
-// Run: npx tsx test/xlsxbook.ts
+// Run: npx tsx test/xlsxbook.test.ts (or npm test for all)
 import assert from 'assert/strict';
 import JSZip from 'jszip';
 import { writeBook } from '../src/xlsxbook';

@@ -1,0 +1,9 @@
+{"chksum":"synthetic","data":{"gstin":"27AAACD0000A1Z9","rtnprd":"102026","version":"1.0","gendt":"14-11-2026",
+ "docdata":{"b2b":[
+  {"ctin":"27AABCS1234F1Z5","trdnm":"SHARMA STEEL TRADERS","inv":[{"inum":"SST/26-27/1042","dt":"01-10-2026","val":120950,"typ":"R","pos":"27","rev":"N","itcavl":"Y","txval":102500,"cgst":9225,"sgst":9225,"igst":0,"cess":0}]},
+  {"ctin":"27AAFCK5678M1Z2","trdnm":"KAVERI PACKAGING PRIVATE LIMITED","inv":[{"inum":"KP-889","dt":"04-10-2026","val":57780,"typ":"R","pos":"27","rev":"N","itcavl":"Y","txval":51000,"cgst":3390,"sgst":3390,"igst":0,"cess":0}]},
+  {"ctin":"24AAKFG2468H1ZQ","trdnm":"GUJARAT POLYMERS LLP","inv":[{"inum":"GP/2026/0567","dt":"07-10-2026","val":89150,"typ":"R","pos":"27","rev":"N","itcavl":"Y","txval":75550.40,"cgst":0,"sgst":0,"igst":13599.07,"cess":0}]},
+  {"ctin":"27AAEFM9753K1Z8","trdnm":"MEHTA & ASSOCIATES","inv":[{"inum":"MA/112","dt":"12-10-2026","val":59000,"typ":"R","pos":"27","rev":"N","itcavl":"Y","txval":50000,"cgst":4500,"sgst":4500,"igst":0,"cess":0}]},
+  {"ctin":"27AAKPR4321J1Z3","trdnm":"RAMESH HARDWARES","inv":[{"inum":"455","dt":"20-10-2026","val":3776,"typ":"R","pos":"27","rev":"N","itcavl":"Y","txval":3200,"cgst":288,"sgst":288,"igst":0,"cess":0}]},
+  {"ctin":"27AABCR9999Q1Z1","trdnm":"RAMESH TRADING COMPANY","inv":[{"inum":"RT-77","dt":"21-10-2026","val":1180,"typ":"R","pos":"27","rev":"N","itcavl":"Y","txval":1000,"cgst":90,"sgst":90,"igst":0,"cess":0}]}
+ ]}}}

@@ -1,5 +1,5 @@
 // Tally columnar register: multi-column mapping (taxable = sum of ledger columns, each tax head = sum of tax-ledger columns)
-// Run: npx tsx test/tally.ts   (fixture: test/fixtures/tally_columnar_purchase.xlsx, synthetic; regenerate with make_tally_columnar.py)
+// Run: npx tsx test/tally.test.ts (or npm test for all)   (fixture: test/fixtures/tally_columnar_purchase.xlsx, synthetic; regenerate with make_tally_columnar.py)
 import { readFileSync } from 'fs';
 import assert from 'assert/strict';
 import { PURCHASE_FIELDS, colsOf, detectHeader, guessMappingFull, looksColumnar, normalise, readTable, unusedAmountCols } from '../src/register';

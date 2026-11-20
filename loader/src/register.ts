@@ -53,6 +53,19 @@ export const PURCHASE_FIELDS: FieldDef[] = [
 ];
 
 /** read every sheet of an .xlsx, or a .csv */
+export const fieldsOf = (k: RegKind): FieldDef[] => (k === 'sales' ? SALES_FIELDS : PURCHASE_FIELDS);
+
+/** Which sheet of a register file to use, its header row, and whether it is sales or purchases (from the file name and headers) */
+export function pickRegister(fileName: string, sheets: RegSheet[]): { sheet: number; header: number; kind: RegKind } {
+  let best = 0, bestScore = -1, kind: RegKind = /purch|bill|vendor|supplier|expense|inward/i.test(fileName) ? 'purchases' : 'sales';
+  sheets.forEach((sh, i) => { const h = detectHeader(sh.rows, fieldsOf(kind)); const sc = Object.keys(guessMappingFull(sh.rows, h, fieldsOf(kind))).length; if (sc > bestScore) { bestScore = sc; best = i; } });
+  const rows = sheets[best].rows;
+  const header = detectHeader(rows, fieldsOf(kind));
+  const hdrTxt = (rows[header] || []).join(' ').toLowerCase();
+  if (/supplier|vendor|bill/.test(hdrTxt) && !/customer/.test(hdrTxt)) kind = 'purchases';
+  return { sheet: best, header, kind };
+}
+
 export async function readTable(name: string, bytes: Uint8Array): Promise<RegSheet[]> {
   if (name.toLowerCase().endsWith('.csv')) {
     const text = new TextDecoder().decode(bytes).replace(/^﻿/, '');
