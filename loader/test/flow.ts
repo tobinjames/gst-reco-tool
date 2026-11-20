@@ -68,6 +68,10 @@ const st = (b: string) => rc.statements.find(s => s.block === b)!;
 assert.deepEqual(st('itc').lines.map(e => e.category), ['Opening balance', 'After the period', 'Tax head'], 'ITC: opening, Mar ITC claimed in Apr, cross-utilisation');
 assert.deepEqual(st('liab').lines.map(e => [e.category, e.explained]), [['Tax head', true], ['Fee booked to tax', true], ['Amount differs', false]], 'liability: wrong head, late fee, unreported Nov sale');
 assert.deepEqual(st('cash').lines.map(e => e.category), ['After the period'], 'cash: challan paid after the period');
+// opening differences in every ledger stay in their own statement (they once merged into the ITC one)
+const rcO = reconcile(run({ ...inp, bal: { ...inp.bal, portal: { liability: { CGST: { opening: 700 } }, cash: { IGST: { opening: 450 } } } } }));
+for (const s of rcO.statements) for (const h of HEAD_KEYS) assert.ok(Math.abs(s.gap[h]) < 0.01, `with openings everywhere: ${s.block} ${h} reconciles (gap ${s.gap[h]})`);
+assert.deepEqual(rcO.statements.map(s => s.lines.filter(e => e.category === 'Opening balance').length), [1, 1, 1], 'one opening line per ledger');
 const netted = rc.noEffect.filter(e => e.category === 'Netted on portal');
 assert.equal(netted.length, 1, 'the June reversal is one event, not two rows');
 assert.ok(rc.noEffect.every(e => HEAD_KEYS.every(h => Math.abs(e.effect[h]) < 0.005)), 'no-effect events do not move the closing');

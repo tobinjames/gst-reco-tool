@@ -441,7 +441,7 @@ export function run(inp: Inputs): Result {
   // one item per row, reason and month (timing items: per row and lag, across months)
   const merged = new Map<string, Item>();
   for (const it of items) {
-    const mk = [it.category, it.bucket, it.text, it.category === 'Timing' || it.category === 'Tax head' && it.months.length === 0 ? '' : it.months.join(',')].join('|');
+    const mk = [it.block, it.category, it.bucket, it.text, it.category === 'Timing' || it.category === 'Tax head' && it.months.length === 0 ? '' : it.months.join(',')].join('|');
     const t = merged.get(mk);
     if (!t) { merged.set(mk, it); continue; }
     for (const h of HEAD_KEYS) { t.amt[h] = r2(t.amt[h] + it.amt[h]); t.shift[h] = r2(t.shift[h] + it.shift[h]); }

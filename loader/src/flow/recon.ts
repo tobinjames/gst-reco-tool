@@ -61,7 +61,9 @@ export function reconcile(r: Result): Recon {
   const groups = new Map<string, ReconEvent>();
   for (const it of r.items) {
     const pair = it.category === 'Netted on portal' || it.category === 'Fee booked to tax';
-    const key = [it.category, pair ? it.text : COLLAPSE.test(it.text) ? `collapse|${it.block}` : `${it.bucket}|${it.text}`, it.category === 'Timing' || COLLAPSE.test(it.text) ? '' : it.months.join(',')].join('|');
+    // events never span ledgers, except a fee booked to tax (the tax payable side and the fee row are one event)
+    const ledger = it.category === 'Fee booked to tax' ? 'liab' : it.block;
+    const key = [ledger, it.category, pair ? it.text : COLLAPSE.test(it.text) ? `collapse|${it.block}` : `${it.bucket}|${it.text}`, it.category === 'Timing' || COLLAPSE.test(it.text) ? '' : it.months.join(',')].join('|');
     let e = groups.get(key);
     if (!e) groups.set(key, e = { id: '', key, block: it.block, category: it.category, explained: it.explained, what: '', action: '', effect: zero(), involved: 0, affects: false, months: [], books: [], portal: [], vouchers: '', rows: [], items: [] });
     e.items.push(it); e.explained &&= it.explained;
