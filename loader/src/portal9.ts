@@ -20,11 +20,25 @@ export function processPortal9(j: any): { rows: RawRow[]; gstin: string; fy: str
   }
   // Table 9: payable / cash / ITC by head
   const t9 = d?.table9 || {};
-  for (const [k, head] of [['iamt', '9A'], ['camt', '9B'], ['samt', '9C'], ['csamt', '9D'], ['intr', '9E'], ['fee', '9F'], ['pen', '9G'], ['other', '9H']]) {
-    const o = t9[k]; if (!o) continue;
+  for (const [k, head] of [
+    ['iamt', '9A'],
+    ['camt', '9B'],
+    ['samt', '9C'],
+    ['csamt', '9D'],
+    ['intr', '9E'],
+    ['fee', '9F'],
+    ['pen', '9G'],
+    ['other', '9H'],
+  ]) {
+    const o = t9[k];
+    if (!o) continue;
     rows.push({ key: `${head}-PAY`, amt: [r2(n(o.txpyble)), 0, 0, 0, 0], info: [`table9.${k}.txpyble`, ''] });
     rows.push({ key: `${head}-CASH`, amt: [r2(n(o.txpaid_cash)), 0, 0, 0, 0], info: [`table9.${k}.txpaid_cash`, ''] });
-    rows.push({ key: `${head}-ITC`, amt: [0, r2(n(o.tax_paid_itc_camt)), r2(n(o.tax_paid_itc_samt)), r2(n(o.tax_paid_itc_iamt)), r2(n(o.tax_paid_itc_csamt))], info: [`table9.${k}.tax_paid_itc_*`, ''] });
+    rows.push({
+      key: `${head}-ITC`,
+      amt: [0, r2(n(o.tax_paid_itc_camt)), r2(n(o.tax_paid_itc_samt)), r2(n(o.tax_paid_itc_iamt)), r2(n(o.tax_paid_itc_csamt))],
+      info: [`table9.${k}.tax_paid_itc_*`, ''],
+    });
   }
   const fp = String(d?.fp || '');
   const fy = fp.length === 6 ? `${+fp.slice(2) - 1}-${fp.slice(4)}` : '';

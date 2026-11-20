@@ -2,18 +2,59 @@
 import assert from 'assert/strict';
 import { DEFAULT_MATCH, MATCH_PRESETS, MatchOptions, reconPurchases } from '../src/recon';
 
-const G = '27AABCS1234F1Z5', G2 = '27AAFCK5678M1Z2';
+const G = '27AABCS1234F1Z5',
+  G2 = '27AAFCK5678M1Z2';
 // Books_Purchase: [date, no, name, gstin, type, itc, status, fy, hsn, uqc, qty, rate, taxable, C, S, I, cess, remarks]
-const bk = (no: string, date: string, t: number, tax: number, g = G) => [date, no, 'Sup', g, 'B2B', 'Inputs', 'Availed', '2026-27', '', '', null, 18, t, tax / 2, tax / 2, 0, 0, ''];
+const bk = (no: string, date: string, t: number, tax: number, g = G) => [
+  date,
+  no,
+  'Sup',
+  g,
+  'B2B',
+  'Inputs',
+  'Availed',
+  '2026-27',
+  '',
+  '',
+  null,
+  18,
+  t,
+  tax / 2,
+  tax / 2,
+  0,
+  0,
+  '',
+];
 // RAW_2B: [key, tx, c, s, i, cess, src, bfy, period, section, gstin, name, dtype, no, date, dfy, avl, rcm, ims]
-const tb = (no: string, date: string, t: number, tax: number, g = G) => ['8A', t, tax / 2, tax / 2, 0, 0, '2B', '2026-27', '102026', 'B2B', g, 'SUP', 'INV', no, date, '2026-27', 'Y', 'N', ''];
+const tb = (no: string, date: string, t: number, tax: number, g = G) => [
+  '8A',
+  t,
+  tax / 2,
+  tax / 2,
+  0,
+  0,
+  '2B',
+  '2026-27',
+  '102026',
+  'B2B',
+  g,
+  'SUP',
+  'INV',
+  no,
+  date,
+  '2026-27',
+  'Y',
+  'N',
+  '',
+];
 const books = [
-  bk('INV-001', '01-10-2026', 1000, 180),          // exact
-  bk('A/26-27/0451', '02-10-2026', 2000, 360),     // last digits
-  bk('SI 7781', '03-10-2026', 3000, 540),          // digits: 2B "SI-07781"
-  bk('XYZ', '10-10-2026', 4000, 720),              // date+amount, 2B dated 12-10 (±2 days)
-  bk('Q-9', '15-10-2026', 5000, 900, G2),          // other GSTIN
-  bk('P1', '20-10-2026', 600, 108), bk('P2', '21-10-2026', 400, 72), // supplier total vs one 2B doc
+  bk('INV-001', '01-10-2026', 1000, 180), // exact
+  bk('A/26-27/0451', '02-10-2026', 2000, 360), // last digits
+  bk('SI 7781', '03-10-2026', 3000, 540), // digits: 2B "SI-07781"
+  bk('XYZ', '10-10-2026', 4000, 720), // date+amount, 2B dated 12-10 (±2 days)
+  bk('Q-9', '15-10-2026', 5000, 900, G2), // other GSTIN
+  bk('P1', '20-10-2026', 600, 108),
+  bk('P2', '21-10-2026', 400, 72), // supplier total vs one 2B doc
 ];
 const twob = [
   tb('INV-001', '01-10-2026', 1000, 180),
@@ -35,7 +76,8 @@ assert.equal(std.basis['A/26-27/0451'], 'Last digits of invoice no.');
 assert.equal(std.basis['XYZ'], 'GSTIN + date (±2d) + amount');
 assert.equal(std.basis['Q-9'], 'Invoice no. + amount (GSTIN differs)');
 assert.equal(std.basis['P1 + P2'], 'Supplier total (2 books / 1 2B docs)');
-assert.equal(std.stats.matched, 6); assert.equal(std.stats.booksOnly, 0);
+assert.equal(std.stats.matched, 6);
+assert.equal(std.stats.booksOnly, 0);
 
 // strict: invoice no. only
 const st = run(MATCH_PRESETS.Strict);

@@ -17,7 +17,8 @@ export function fyOfDate(d: string | undefined): string {
   if (!d) return '';
   const m = d.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
   if (!m) return '';
-  const mon = +m[2], yr = +m[3];
+  const mon = +m[2],
+    yr = +m[3];
   const start = mon >= 4 ? yr : yr - 1;
   return `${start}-${String(start + 1).slice(2)}`;
 }
@@ -38,20 +39,60 @@ export function amtOf(o: any, txKey = 'txval'): Amt {
 export function amt2b(o: any): Amt {
   return [r2(n(o?.txval)), r2(n(o?.cgst)), r2(n(o?.sgst)), r2(n(o?.igst)), r2(n(o?.cess))];
 }
-export const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+export const MONTHS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
 
-export interface RawRow { key: string; amt: Amt; info: (string | number)[] }
-export interface Warn { level: 'info' | 'warn' | 'error'; file: string; msg: string }
+export interface RawRow {
+  key: string;
+  amt: Amt;
+  info: (string | number)[];
+}
+export interface Warn {
+  level: 'info' | 'warn' | 'error';
+  file: string;
+  msg: string;
+}
 
 // ---- shared by the page modules (HTML) and the Excel writers
 /** text for HTML */
-export const esc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]);
+export const esc = (s: any) =>
+  String(s ?? '').replace(/[&<>"]/g, c => (({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }) as any)[c]);
 /** text for XML inside .xlsx: escaped, and characters Excel rejects (control characters, broken surrogate pairs) removed */
-export const xmlEsc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
+export const xmlEsc = (s: any) =>
+  String(s ?? '')
+    .replace(/[&<>"]/g, c => (({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }) as any)[c])
+    .replace(
+      /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+      '',
+    );
 /** 1,23,456.70 (Indian grouping, two decimals) */
 export const inr = (v: number) => v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 /** settings remembered in this browser (JSON); never throws, e.g. in a private window */
 export const store = {
-  get(k: string) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } },
-  set(k: string, v: any) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+  get(k: string) {
+    try {
+      return JSON.parse(localStorage.getItem(k) || 'null');
+    } catch {
+      return null;
+    }
+  },
+  set(k: string, v: any) {
+    try {
+      localStorage.setItem(k, JSON.stringify(v));
+    } catch {
+      /* storage unavailable */
+    }
+  },
 };

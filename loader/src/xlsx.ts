@@ -6,7 +6,15 @@ import { xmlEsc } from './util';
 export type V = string | number | null | undefined | { f: string };
 const esc = xmlEsc;
 const colNum = (c: string) => c.split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
-export const colLetter = (n: number) => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+export const colLetter = (n: number) => {
+  let s = '';
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+};
 
 function cellXml(ref: string, v: V, style?: string) {
   const s = style ? ` s="${style}"` : '';
@@ -18,8 +26,8 @@ function cellXml(ref: string, v: V, style?: string) {
 
 export class Workbook {
   zip!: JSZip;
-  private sheets = new Map<string, string>();   // name -> path
-  private xml = new Map<string, string>();      // path -> xml (edited)
+  private sheets = new Map<string, string>(); // name -> path
+  private xml = new Map<string, string>(); // path -> xml (edited)
 
   static async open(data: ArrayBuffer | Uint8Array) {
     const wb = new Workbook();
@@ -28,7 +36,8 @@ export class Workbook {
     const rels = await wb.zip.file('xl/_rels/workbook.xml.rels')!.async('string');
     const relMap = new Map<string, string>();
     for (const m of rels.matchAll(/<Relationship\b[^>]*>/g)) {
-      const id = m[0].match(/Id="([^"]+)"/)?.[1], tgt = m[0].match(/Target="([^"]+)"/)?.[1];
+      const id = m[0].match(/Id="([^"]+)"/)?.[1],
+        tgt = m[0].match(/Target="([^"]+)"/)?.[1];
       if (id && tgt) relMap.set(id, tgt.replace(/^\/?xl\//, '').replace(/^\//, ''));
     }
     for (const m of wbXml.matchAll(/<sheet\b[^>]*>/g)) {
@@ -38,15 +47,20 @@ export class Workbook {
     }
     return wb;
   }
-  has(name: string) { return this.sheets.has(name); }
+  has(name: string) {
+    return this.sheets.has(name);
+  }
   private async get(name: string) {
-    const p = this.sheets.get(name); if (!p) throw new Error(`Sheet ${name} not in workbook`);
+    const p = this.sheets.get(name);
+    if (!p) throw new Error(`Sheet ${name} not in workbook`);
     if (!this.xml.has(p)) this.xml.set(p, await this.zip.file(p)!.async('string'));
     return p;
   }
   private split(xml: string) {
-    const a = xml.indexOf('<sheetData'), aEnd = xml.indexOf('>', a) + 1;
-    if (xml[aEnd - 2] === '/') return { head: xml.slice(0, a) + '<sheetData>', rows: [] as string[], tail: '</sheetData>' + xml.slice(aEnd) };
+    const a = xml.indexOf('<sheetData'),
+      aEnd = xml.indexOf('>', a) + 1;
+    if (xml[aEnd - 2] === '/')
+      return { head: xml.slice(0, a) + '<sheetData>', rows: [] as string[], tail: '</sheetData>' + xml.slice(aEnd) };
     const b = xml.indexOf('</sheetData>');
     const body = xml.slice(aEnd, b);
     const rows = body.match(/<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g) || [];
@@ -61,7 +75,8 @@ export class Workbook {
     if (styled) {
       const sr = rows.find(r => +(r.match(/<row\b[^>]*\br="(\d+)"/)?.[1] || 0) === startRow);
       for (const c of sr?.match(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || []) {
-        const ref = c.match(/\br="([A-Z]+)\d+"/)?.[1], st = c.match(/\bs="(\d+)"/)?.[1];
+        const ref = c.match(/\br="([A-Z]+)\d+"/)?.[1],
+          st = c.match(/\bs="(\d+)"/)?.[1];
         if (ref && st) styles[colNum(ref) - 1] = st;
       }
     }
@@ -70,13 +85,24 @@ export class Workbook {
       const r = startRow + i;
       if (styled) {
         const n = Math.max(vals.length, styles.length);
-        return `<row r="${r}">` + Array.from({ length: n }, (_, j) => cellXml(colLetter(j + 1) + r, vals[j], styles[j])).join('') + '</row>';
+        return (
+          `<row r="${r}">` +
+          Array.from({ length: n }, (_, j) => cellXml(colLetter(j + 1) + r, vals[j], styles[j])).join('') +
+          '</row>'
+        );
       }
-      return `<row r="${r}">` + vals.map((v, j) => (v === null || v === undefined || v === '') ? '' : cellXml(colLetter(j + 1) + r, v)).join('') + '</row>';
+      return (
+        `<row r="${r}">` +
+        vals.map((v, j) => (v === null || v === undefined || v === '' ? '' : cellXml(colLetter(j + 1) + r, v))).join('') +
+        '</row>'
+      );
     });
     let xml = head + keep.join('') + out.join('') + tail;
     const last = startRow + data.length - 1;
-    xml = xml.replace(/<dimension ref="[^"]*"\/>/, `<dimension ref="A1:${colLetter(Math.max(...data.map(d => d.length), 1))}${Math.max(last, 5)}"/>`);
+    xml = xml.replace(
+      /<dimension ref="[^"]*"\/>/,
+      `<dimension ref="A1:${colLetter(Math.max(...data.map(d => d.length), 1))}${Math.max(last, 5)}"/>`,
+    );
     this.xml.set(p, xml);
   }
   /** fill the input columns (A..) of a table from startRow, keep formula columns, extend formulas to extra rows, clear old input values */
@@ -99,7 +125,8 @@ export class Workbook {
     const lastExisting = Math.max(startRow, ...[...byRow.keys()]);
     const last = Math.max(lastExisting, startRow + data.length - 1);
     for (let r = startRow; r <= last; r++) {
-      const i = r - startRow, vals = data[i];
+      const i = r - startRow,
+        vals = data[i];
       if (!vals && !byRow.has(r)) continue;
       const cur = cellsOf(byRow.get(r));
       for (let j = 0; j < nInput; j++) {
@@ -107,16 +134,31 @@ export class Workbook {
         const style = old?.match(/\bs="(\d+)"/)?.[1];
         cur.set(j + 1, cellXml(colLetter(j + 1) + r, vals ? vals[j] : null, style));
       }
-      if (vals) for (const f of formulas) if (!cur.has(f.col) || !/<f\b/.test(cur.get(f.col)!)) {
-        const ref = colLetter(f.col) + r;
-        cur.set(f.col, `<c r="${ref}"${f.style ? ` s="${f.style}"` : ''}><f>${esc(shiftFormula(f.text, i, 0))}</f></c>`);
-      }
-      const open = (byRow.get(r)?.match(/^<row\b[^>]*>/)?.[0] ?? `<row r="${r}">`).replace(/\sspans="[^"]*"/, '').replace(/\/>$/, '>');
-      byRow.set(r, open + [...cur.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]).join('') + '</row>');
+      if (vals)
+        for (const f of formulas)
+          if (!cur.has(f.col) || !/<f\b/.test(cur.get(f.col)!)) {
+            const ref = colLetter(f.col) + r;
+            cur.set(f.col, `<c r="${ref}"${f.style ? ` s="${f.style}"` : ''}><f>${esc(shiftFormula(f.text, i, 0))}</f></c>`);
+          }
+      const open = (byRow.get(r)?.match(/^<row\b[^>]*>/)?.[0] ?? `<row r="${r}">`)
+        .replace(/\sspans="[^"]*"/, '')
+        .replace(/\/>$/, '>');
+      byRow.set(
+        r,
+        open +
+          [...cur.entries()]
+            .sort((a, b) => a[0] - b[0])
+            .map(e => e[1])
+            .join('') +
+          '</row>',
+      );
     }
     const all = [...byRow.entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]);
     let xml = head + all.join('') + tail;
-    xml = xml.replace(/<dimension ref="[^"]*"\/>/, `<dimension ref="A1:${colLetter(Math.max(nInput, ...formulas.map(f => f.col)))}${last}"/>`);
+    xml = xml.replace(
+      /<dimension ref="[^"]*"\/>/,
+      `<dimension ref="A1:${colLetter(Math.max(nInput, ...formulas.map(f => f.col)))}${last}"/>`,
+    );
     this.xml.set(p, xml);
   }
   /** set individual cells, keeping the existing cell style */
@@ -142,7 +184,9 @@ export class Workbook {
         const style = ref in styleOf ? styleOf[ref] : old?.match(/\bs="(\d+)"/)?.[1];
         map.set(ref, cellXml(ref, v, style));
       }
-      const sorted = [...map.entries()].sort((a, b) => colNum(a[0].replace(/\d+/, '')) - colNum(b[0].replace(/\d+/, ''))).map(e => e[1]);
+      const sorted = [...map.entries()]
+        .sort((a, b) => colNum(a[0].replace(/\d+/, '')) - colNum(b[0].replace(/\d+/, '')))
+        .map(e => e[1]);
       const open = row.match(/^<row\b[^>]*>/)![0].replace(/\sspans="[^"]*"/, '');
       byRow.set(r, open + sorted.join('') + '</row>');
     }
@@ -151,7 +195,8 @@ export class Workbook {
   }
   /** style index of each cell (as the sheet stands now) */
   async styles(name: string, refs: string[]): Promise<Record<string, string | undefined>> {
-    const xml = this.xml.get(await this.get(name))!, out: Record<string, string | undefined> = {};
+    const xml = this.xml.get(await this.get(name))!,
+      out: Record<string, string | undefined> = {};
     for (const ref of refs) out[ref] = xml.match(new RegExp(`<c r="${ref}"[^>]*?\\bs="(\\d+)"`))?.[1];
     return out;
   }
@@ -162,7 +207,7 @@ export class Workbook {
     if (!/<calcPr/.test(w)) w = w.replace('</workbook>', '<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>');
     this.zip.file('xl/workbook.xml', w);
     for (const p of this.sheets.values()) {
-      let xml = this.xml.get(p) ?? await this.zip.file(p)!.async('string');
+      let xml = this.xml.get(p) ?? (await this.zip.file(p)!.async('string'));
       xml = xml.replace(/(<c\b[^>]*>)(<f\b[^>]*(?:\/>|>[\s\S]*?<\/f>))<v>[^<]*<\/v>/g, '$1$2');
       this.zip.file(p, xml);
     }
@@ -179,15 +224,19 @@ export class Workbook {
 
 /** Reads cached cell values from a saved workbook (values exist once Excel / LibreOffice has saved it) */
 export class Reader {
-  private zip!: JSZip; private sheets = new Map<string, string>(); private ss: string[] = [];
+  private zip!: JSZip;
+  private sheets = new Map<string, string>();
+  private ss: string[] = [];
   private cache = new Map<string, Map<string, Cell>>();
   static async open(data: Uint8Array) {
-    const r = new Reader(); r.zip = await JSZip.loadAsync(data);
+    const r = new Reader();
+    r.zip = await JSZip.loadAsync(data);
     const wbXml = await r.zip.file('xl/workbook.xml')!.async('string');
     const rels = await r.zip.file('xl/_rels/workbook.xml.rels')!.async('string');
     const relMap = new Map<string, string>();
     for (const m of rels.matchAll(/<Relationship\b[^>]*>/g)) {
-      const id = m[0].match(/Id="([^"]+)"/)?.[1], tgt = m[0].match(/Target="([^"]+)"/)?.[1];
+      const id = m[0].match(/Id="([^"]+)"/)?.[1],
+        tgt = m[0].match(/Target="([^"]+)"/)?.[1];
       if (id && tgt) relMap.set(id, tgt.replace(/^\/?xl\//, '').replace(/^\//, ''));
     }
     for (const m of wbXml.matchAll(/<sheet\b[^>]*>/g)) {
@@ -198,37 +247,50 @@ export class Reader {
     const ssf = r.zip.file('xl/sharedStrings.xml');
     if (ssf) {
       const x = await ssf.async('string');
-      r.ss = (x.match(/<si>[\s\S]*?<\/si>/g) || []).map(si => unesc((si.match(/<t\b[^>]*>([\s\S]*?)<\/t>/g) || []).map(t => t.replace(/<[^>]+>/g, '')).join('')));
+      r.ss = (x.match(/<si>[\s\S]*?<\/si>/g) || []).map(si =>
+        unesc((si.match(/<t\b[^>]*>([\s\S]*?)<\/t>/g) || []).map(t => t.replace(/<[^>]+>/g, '')).join('')),
+      );
     }
     return r;
   }
-  has(name: string) { return this.sheets.has(name); }
+  has(name: string) {
+    return this.sheets.has(name);
+  }
   async sheet(name: string) {
     if (this.cache.has(name)) return this.cache.get(name)!;
-    const p = this.sheets.get(name); if (!p) throw new Error(`Sheet "${name}" not found`);
+    const p = this.sheets.get(name);
+    if (!p) throw new Error(`Sheet "${name}" not found`);
     const xml = await this.zip.file(p)!.async('string');
     const map = new Map<string, Cell>();
     const shared = new Map<string, { ref: string; text: string }>();
     for (const m of xml.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-      const attrs = m[1], body = m[2] || '';
-      const ref = attrs.match(/\br="([A-Z]+\d+)"/)?.[1]; if (!ref) continue;
+      const attrs = m[1],
+        body = m[2] || '';
+      const ref = attrs.match(/\br="([A-Z]+\d+)"/)?.[1];
+      if (!ref) continue;
       const t = attrs.match(/\bt="(\w+)"/)?.[1];
       const f = /<f\b/.test(body);
       let ftext: string | undefined;
       if (f) {
         const fm = body.match(/<f\b([^>]*?)(?:\/>|>([\s\S]*?)<\/f>)/)!;
-        const fa = fm[1], ft = fm[2] !== undefined ? unesc(fm[2]) : '';
+        const fa = fm[1],
+          ft = fm[2] !== undefined ? unesc(fm[2]) : '';
         const si = fa.match(/\bsi="(\d+)"/)?.[1];
         if (/t="shared"/.test(fa) && si !== undefined) {
-          if (ft) { shared.set(si, { ref, text: ft }); ftext = ft; }
-          else { const mst = shared.get(si); if (mst) ftext = shiftFormula(mst.text, rc(ref)[0] - rc(mst.ref)[0], rc(ref)[1] - rc(mst.ref)[1]); }
+          if (ft) {
+            shared.set(si, { ref, text: ft });
+            ftext = ft;
+          } else {
+            const mst = shared.get(si);
+            if (mst) ftext = shiftFormula(mst.text, rc(ref)[0] - rc(mst.ref)[0], rc(ref)[1] - rc(mst.ref)[1]);
+          }
         } else ftext = ft;
       }
       const vRaw0 = body.match(/<v>([\s\S]*?)<\/v>/)?.[1];
       const vRaw = vRaw0 === '' ? undefined : vRaw0;
       let v: any = null;
       if (t === 's' && vRaw !== undefined) v = this.ss[+vRaw] ?? '';
-      else if (t === 'inlineStr') v = unesc((body.match(/<t\b[^>]*>([\s\S]*?)<\/t>/)?.[1]) ?? '');
+      else if (t === 'inlineStr') v = unesc(body.match(/<t\b[^>]*>([\s\S]*?)<\/t>/)?.[1] ?? '');
       else if (t === 'str') v = vRaw !== undefined ? unesc(vRaw) : null;
       else if (t === 'e') v = { error: vRaw };
       else if (t === 'b') v = vRaw === '1';
@@ -239,22 +301,44 @@ export class Reader {
     return map;
   }
   /** value of a cell; throws if it is a formula without a saved result */
-  async get(name: string, ref: string): Promise<Cell> { return (await this.sheet(name)).get(ref) ?? { v: null, f: false }; }
-  sheetNames() { return [...this.sheets.keys()]; }
+  async get(name: string, ref: string): Promise<Cell> {
+    return (await this.sheet(name)).get(ref) ?? { v: null, f: false };
+  }
+  sheetNames() {
+    return [...this.sheets.keys()];
+  }
 }
-export interface Cell { v: any; f: boolean; ftext?: string }
+export interface Cell {
+  v: any;
+  f: boolean;
+  ftext?: string;
+}
 /** [row, col] of an A1 reference */
-export const rc = (ref: string): [number, number] => { const m = ref.match(/^([A-Z]+)(\d+)$/)!; return [+m[2], colNumber(m[1])]; };
+export const rc = (ref: string): [number, number] => {
+  const m = ref.match(/^([A-Z]+)(\d+)$/)!;
+  return [+m[2], colNumber(m[1])];
+};
 const colNumber = (c: string) => c.split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
 /** move relative references of a formula by (dr, dc) - used to expand Excel shared formulas */
 export function shiftFormula(f: string, dr: number, dc: number): string {
-  return f.split(/("(?:[^"]|"")*")/).map((part, i) => i % 2 ? part : part.replace(
-    /(^|[^A-Za-z0-9_.!$'])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])/g,
-    (_m, pre, cAbs, col, rAbs, row) => {
-      const c = cAbs ? col : colLetter(colNumber(col) + dc);
-      const r = rAbs ? row : String(+row + dr);
-      return `${pre}${cAbs}${c}${rAbs}${r}`;
-    })).join('');
+  return f
+    .split(/("(?:[^"]|"")*")/)
+    .map((part, i) =>
+      i % 2
+        ? part
+        : part.replace(/(^|[^A-Za-z0-9_.!$'])(\$?)([A-Z]{1,3})(\$?)(\d+)(?![A-Za-z0-9_(])/g, (_m, pre, cAbs, col, rAbs, row) => {
+            const c = cAbs ? col : colLetter(colNumber(col) + dc);
+            const r = rAbs ? row : String(+row + dr);
+            return `${pre}${cAbs}${c}${rAbs}${r}`;
+          }),
+    )
+    .join('');
 }
 const unescXml = (s: string) => unesc(s);
-const unesc = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const unesc = (s: string) =>
+  s
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
