@@ -14,8 +14,12 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.comments import Comment
 
-M = json.load(open('/home/claude/masters.json'))
-OUT = '/home/claude/gstr9tool/GST_Annual_Return_Workbook.xlsx'
+import os
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOADER = os.path.join(HERE, '..', 'loader')
+M = json.load(open(os.path.join(HERE, 'masters.json')))
+# writes straight into the loader, so a rebuild needs no copying
+OUT = os.path.join(LOADER, 'template', 'GST_Annual_Return_Workbook.xlsx')
 
 # ---------------------------------------------------------------- styles
 F = 'Arial'
@@ -1123,12 +1127,11 @@ ig.protection.selectLockedCells = True
 ig.protection.selectUnlockedCells = True
 wb.active = 0
 wb.save(OUT)
-open('/home/claude/gstr9tool/template_version.txt', 'w').write(TEMPLATE_VERSION)
-json.dump({k: v for k, v in ROWMAP.items()}, open('/home/claude/gstr9tool/rowmap.json', 'w'), indent=0)
+json.dump({k: v for k, v in ROWMAP.items()}, open(os.path.join(LOADER, 'src', 'rowmap.json'), 'w'), indent=0)
 PATHS = {}
 for sec_ in [T4, T5, T6, T7, T8, T10]:
     for row in sec_:
         if row['kind'] != 'hdr' and row.get('path'):
             PATHS[row['key']] = row['path']
-json.dump(PATHS, open('/home/claude/gstr9tool/paths.json', 'w'), indent=1)
+json.dump(PATHS, open(os.path.join(LOADER, 'src', 'paths.json'), 'w'), indent=1)
 print('saved', OUT)

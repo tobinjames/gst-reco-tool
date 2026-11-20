@@ -14,8 +14,12 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.comments import Comment
 
-M = json.load(open('/home/claude/masters.json'))
-OUT = '/home/claude/gstr9tool/ITC_Recon_Template.xlsx'
+import os
+HERE = os.path.dirname(os.path.abspath(__file__))
+LOADER = os.path.join(HERE, '..', 'loader')
+M = json.load(open(os.path.join(HERE, 'masters.json')))
+# writes straight into the loader, so a rebuild needs no copying
+OUT = os.path.join(LOADER, 'template', 'ITC_Recon_Template.xlsx')
 
 # ---------------------------------------------------------------- styles
 F = 'Arial'
