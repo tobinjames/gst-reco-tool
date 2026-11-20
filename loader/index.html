@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>GST Annual Return Loader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@300;400;500&display=swap" rel="stylesheet" />
+<style>
+  /* James & James brand: white ground, blue ink, hairline grid, square corners, Onest */
+  :root { --brand:#2C388E; --brand-500:#4552b0; --tint:#eef0f8; --strong:#1d2433; --text:#4a5263; --muted:#7b8394; --rule:#2C388E;
+          --ok:#1e7b45; --warn:#9a6200; --err:#b42318; }
+  * { box-sizing:border-box; border-radius:0; }
+  body { margin:0; font:300 15px/1.6 Onest, "Segoe UI", system-ui, Arial, sans-serif; color:var(--text); background:#fff; }
+  header { border-bottom:0.8px solid var(--rule); padding:22px 32px; display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:24px; font-weight:400; color:var(--brand); }
+  .eyebrow, header .firm { font-weight:500; font-size:11.5px; letter-spacing:1.9px; text-transform:uppercase; color:var(--brand); }
+  header .sub { color:var(--muted); font-size:13px; }
+  main { max-width:1140px; margin:0 auto 64px; border-left:0.8px solid var(--rule); border-right:0.8px solid var(--rule); }
+  .card { border-bottom:0.8px solid var(--rule); padding:32px; }
+  .card h2 { margin:0 0 18px; font-size:20px; font-weight:400; color:var(--brand); display:flex; gap:14px; align-items:baseline; }
+  .num { font-weight:500; font-size:11.5px; letter-spacing:1.9px; color:var(--brand); }
+  #drop, .dz { border:0.8px dashed var(--brand); padding:30px; text-align:center; cursor:pointer; transition:background .15s; }
+  #drop:hover, #drop.over, .dz:hover, .dz.over { background:var(--tint); }
+  #drop b, .dz b { color:var(--brand); font-weight:400; font-size:17px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:0.8px solid #d5d8e6; vertical-align:top; }
+  th { color:var(--brand); font-weight:500; font-size:11px; letter-spacing:1.6px; text-transform:uppercase; border-bottom:0.8px solid var(--rule); }
+  td { color:var(--strong); }
+  td.r { text-align:right; font-variant-numeric:tabular-nums; }
+  .tag { font-weight:500; font-size:11px; letter-spacing:1.2px; text-transform:uppercase; color:var(--brand); }
+  .row { display:flex; gap:18px; flex-wrap:wrap; align-items:end; }
+  label { display:grid; gap:6px; font-weight:500; font-size:11px; letter-spacing:1.6px; text-transform:uppercase; color:var(--brand); }
+  input, select { font:300 15px Onest, "Segoe UI", system-ui, Arial, sans-serif; padding:8px 10px; border:0.8px solid var(--brand); min-width:180px; color:var(--strong); background:#fff; }
+  input:focus, select:focus { outline:2px solid var(--brand-500); outline-offset:-1px; }
+  button { font:500 12px Onest, "Segoe UI", system-ui, Arial, sans-serif; letter-spacing:1.9px; text-transform:uppercase; padding:12px 26px; border:0.8px solid var(--brand); background:var(--brand); color:#fff; cursor:pointer; }
+  button:hover { background:var(--brand-500); }
+  button:disabled { background:#fff; color:#a3a9c4; border-color:#c6cade; cursor:not-allowed; }
+  button.link { background:none; border:0; color:var(--brand); padding:0; letter-spacing:1.2px; font-size:11px; }
+  button.link:hover { text-decoration:underline; background:none; }
+  a { color:var(--brand); }
+  .muted { color:var(--muted); font-size:13px; }
+  .warn-error { color:var(--err); } .warn-warn { color:var(--warn); } .warn-info { color:var(--muted); } .warn-ok { color:var(--ok); }
+  ul.warns { margin:8px 0 0; padding-left:18px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+  @media (max-width:800px){ .grid2 { grid-template-columns:1fr; } .card { padding:22px; } }
+  table.cov { table-layout:fixed; }
+  table.cov th, table.cov td { border:0.8px solid #d5d8e6; padding:7px 4px; text-align:center; }
+  table.cov tr:first-child th { border-bottom:0.8px solid var(--rule); }
+  table.cov th.cvl { text-align:left; width:190px; padding-left:10px; color:var(--brand); }
+  th.cvl span { display:block; font-weight:300; letter-spacing:0; text-transform:none; font-size:12px; color:var(--muted); }
+  th.cvh { width:auto; }
+  td.cv { font-size:14px; }
+  td.ok { background:var(--tint); color:var(--brand); font-weight:500; }
+  td.miss { color:var(--err); background:#fdf1f0; font-weight:500; }
+  td.opt { color:#b0b5c4; }
+  td.na { color:#c6cade; }
+  td.wide { text-align:left; padding-left:10px; font-size:13px; }
+  td.cvc { font-variant-numeric:tabular-nums; font-size:13px; width:70px; }
+  td.cvc.full { color:var(--brand); font-weight:500; }
+  td.cvc.part { color:var(--err); font-weight:500; }
+  ol.steps { margin:8px 0 0; padding-left:20px; color:var(--strong); }
+  .reg { border:0.8px solid #d5d8e6; padding:16px 18px; margin-bottom:16px; }
+  .reg h3 { margin:0 0 10px; font-weight:400; font-size:16px; color:var(--brand); }
+  .mapgrid { display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap:10px 18px; margin:12px 0; }
+  .mapgrid label select { min-width:0; width:100%; }
+  .req { color:var(--err); }
+  .prev { font-size:12px; overflow-x:auto; } .prev td, .prev th { padding:4px 6px; white-space:nowrap; }
+  .modes { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:800px){ .modes { grid-template-columns:1fr; } }
+  button.mode { text-align:left; background:#fff; color:var(--strong); border:0.8px solid var(--brand); padding:18px 20px; letter-spacing:0; text-transform:none; font-weight:300; font-size:14px; display:grid; gap:6px; }
+  button.mode b { font-weight:400; font-size:17px; color:var(--brand); }
+  button.mode:hover { background:var(--tint); }
+  button.mode.on { background:var(--brand); color:#fff; } button.mode.on b { color:#fff; }
+  .gaps { margin-top:12px; font-size:13.5px; color:var(--strong); }
+  .ok-text { color:var(--ok); }
+  footer { max-width:1140px; margin:0 auto; padding:18px 32px; color:var(--muted); font-size:12.5px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<header><div><div class="firm">James &amp; James LLP · Taxation</div><h1>GST Annual Return Loader</h1></div><span class="sub">GSTR-9 / GSTR-9C · v0.7 · files are processed on this computer only</span></header>
+<main>
+  <section class="card">
+    <h2><span class="num">00</span> What are you doing?</h2>
+    <div class="modes">
+      <button class="mode" data-mode="itc"><b>Monthly ITC reconciliation</b><span>GSTR-2B vs purchase register, for any month, quarter or the year. Output: ITC reconciliation workbook with claimable ITC and supplier follow-ups.</span></button>
+      <button class="mode" data-mode="annual"><b>Annual return</b><span>GSTR-9 / GSTR-9C from GSTR-1, 3B, 2B and the portal JSON, with sales and purchase reconciliations and the upload JSON.</span></button>
+    </div>
+  </section>
+  <section class="card">
+    <h2><span class="num">01</span> Add files</h2>
+    <div id="drop"><b>Drop files here</b> or click to choose<br/><span class="muted">File names don't matter: each file is recognised by its content.</span><br/>
+      <span class="muted" id="dropHint">GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Nov) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it</span></div>
+    <input id="pick" type="file" multiple accept=".json,.pdf,.zip,.xlsx,.csv" hidden />
+    <div id="coverage" style="margin-top:22px"></div>
+    <details id="filelist" style="margin-top:18px"><summary class="eyebrow" style="cursor:pointer">Files added</summary><div id="files" style="margin-top:10px"></div></details>
+  </section>
+  <section class="card" id="regcard" style="display:none">
+    <h2><span class="num">01b</span> Map register columns</h2>
+    <p class="muted" style="margin-top:-8px">Tell the Loader which column holds what. Rows per rate or per item are fine: they are added up to invoice level when reconciling. Mappings are remembered for registers with the same columns.</p>
+    <div id="regs"></div>
+  </section>
+  <section class="card">
+    <h2><span class="num">02</span> Confirm client &amp; year</h2>
+    <div class="row">
+      <label>Financial year<select id="fy"></select></label>
+      <label>GSTIN<input id="gstin" placeholder="detected from files" /></label>
+      <label style="flex:1">Legal name<input id="legal" placeholder="detected from GSTR-3B" style="width:100%" /></label>
+    </div>
+  </section>
+  <section class="card">
+    <h2><span class="num">03</span> Build workbook</h2>
+    <div class="row"><button id="build" disabled>Build workbook</button><span id="status" class="muted"></span></div>
+    <div id="result" style="margin-top:14px"></div>
+  </section>
+  <section class="card" id="step4">
+    <h2><span class="num">04</span> Generate upload JSON</h2>
+    <p class="muted" style="margin-top:-8px">When the workbook is reviewed: open it in Excel, save it, and drop the saved file here. The "To be Filed" columns become the GSTR-9 upload JSON.</p>
+    <div id="drop2" class="dz"><b>Drop the finished workbook here</b> or click to choose</div>
+    <input id="pick2" type="file" accept=".xlsx" hidden />
+    <div id="gen" style="margin-top:14px"></div>
+  </section>
+  </main>
+<footer><span>Raw data goes to the RAW_ sheets; Books, Basis choices and adjustments are kept when you drop your own workbook.</span><span>James &amp; James LLP · jjglobal.in</span></footer>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

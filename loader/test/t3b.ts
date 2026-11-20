@@ -1,0 +1,10 @@
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { readFileSync } from 'fs';
+import { linesFromItems, parse3b } from '../src/gstr3b';
+const data = new Uint8Array(readFileSync(process.argv[2]));
+const doc = await pdfjs.getDocument({ data }).promise;
+const pages = [];
+for (let i = 1; i <= doc.numPages; i++) pages.push(await (await doc.getPage(i)).getTextContent() as any);
+const lines = linesFromItems(pages);
+const r = parse3b(lines, '3b.pdf');
+console.log(JSON.stringify({ ...r, rows: r.rows.map(x => [x.key, ...x.amt]) }, null, 0).replace(/\],\[/g, '],\n['));
