@@ -228,6 +228,9 @@
   table.fl td:first-child { min-width:190px; }
   table.fl input.amt { width:130px; text-align:right; font-variant-numeric:tabular-nums; }
   td.neg { color:var(--err); }
+  table.rec td:first-child { min-width:320px; } table.rec td { vertical-align:top; }
+  table.rec tr.unx > td:first-child { border-left:4px solid var(--err); }
+  table.rec .link { font-size:12.5px; padding:0; margin-top:2px; }
   .item { border:1px solid var(--line); border-radius:var(--r-sm); margin:8px 0; background:#fff; }
   .item > summary { cursor:pointer; padding:10px 14px; display:grid; grid-template-columns:auto 1fr auto; gap:4px 12px; align-items:baseline; }
   .item > summary::before { display:none; }
@@ -418,8 +421,8 @@
     <div id="flFlow"></div>
   </section>
   <section class="card" data-tabs="flow" id="fl-reasons">
-    <h2><span class="num">7</span> Why books and portal differ</h2>
-    <p class="muted">Each reason is worked out from the entries. To change one, correct the records behind it: the flow row, tax head or return period of a books line, with a remark. Every change goes to the Audit sheet.</p>
+    <h2><span class="num">7</span> Reconciliation: books to portal</h2>
+    <p class="muted">Every item is worked out from the entries. To change one, open its entries and correct the records behind it (the flow row, tax head or return period of a books line), with a remark. Every change goes to the Audit sheet.</p>
     <div id="flReasons"></div>
   </section>
   <section class="card" data-tabs="flow" id="fl-checks">

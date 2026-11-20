@@ -5,6 +5,7 @@ import { accountsOf, guessAccount, isGstName, parseBooks } from './books';
 import { ymOfDate } from './portal';
 import { AccMapEntry, BEntry, HEAD_KEYS, HeadK, Inputs, Item, LineOverride, Result, allowedBuckets, blockOfType, bucketLabel, monthsOf, run, ymLabel } from './engine';
 import { AuditRow, flowWorkbook } from './workbook';
+import { ReconEvent, ReconStatement, ledgerLabel, reconcile } from './recon';
 import { FLOW_GUIDE } from './guide';
 import { readTable } from '../register';
 
@@ -26,7 +27,6 @@ export class FlowTab {
   private st: State = { ov: {}, bal: { books: {}, portal: {} }, audit: [] };
   private key = '';
   private view: 'books' | 'portal' | 'diff' = 'diff';
-  private filter: 'all' | 'un' | 'ex' = 'all';
   private showAll = false;
   private editing = '';
   private open = new Set<string>();
@@ -237,7 +237,7 @@ export class FlowTab {
       <div class="kpis">${kpi('ITC closing', 'itc')}${kpi('Liability closing', 'liab')}${kpi('Cash ledger closing', 'cash')}<div class="kpi ${unex.length ? 'bad' : 'ok'}"><span>Unexplained</span><b>${unex.length}</b><em>${unex.length ? `item(s), ${fmt(unTot)} in total` : 'every difference is explained'}</em></div></div>
       <div class="tablewrap"><table class="fl"><tr><th>${this.view === 'books' ? 'Flow as per books' : this.view === 'portal' ? 'Flow as per GST portal' : 'Difference: books − portal'}</th>${heads.map(h => `<th class="r">${HK_TXT[h]}</th>`).join('')}<th class="r">Total</th>${this.view === 'diff' ? '<th class="r">Of which unexplained</th>' : ''}</tr>${BLOCKS.map(tbl).join('')}</table></div>
       ${useAll ? '<p class="muted" style="margin:8px 0 0">Books accounts that are not split by tax head (for example a single GST cash ledger account) are in "Not split", while the portal shows each head: compare the Total column for those rows.</p>' : ''}
-      <p class="muted" style="margin:8px 0 0">${this.view === 'books' ? 'From the books ledgers only, by voucher date.' : this.view === 'portal' ? 'From the credit ledger, cash ledger and liability register only, by return period.' : 'The closing difference is the sum of the row differences. Each one is explained under "Why books and portal differ".'}
+      <p class="muted" style="margin:8px 0 0">${this.view === 'books' ? 'From the books ledgers only, by voucher date.' : this.view === 'portal' ? 'From the credit ledger, cash ledger and liability register only, by return period.' : 'The closing difference is the sum of the row differences. The Reconciliation below explains it item by item.'}
         ${r.warns.length ? ` <span class="warn-warn">${r.warns.length} message(s) under Cross-checks.</span>` : ''}</p>`;
     const box = $('flFlow');
     box.querySelectorAll('button[data-view]').forEach((el: any) => (el.onclick = () => { this.view = el.dataset.view; this.renderFlow(); }));
@@ -250,9 +250,6 @@ export class FlowTab {
     const r = this.res;
     if (!r) { $('flReasons').innerHTML = ''; return; }
     const byId = new Map(r.books.map(e => [e.id, e])), pById = new Map(r.portal.map(e => [e.id, e]));
-    const list = r.items.filter(i => this.filter === 'all' || (this.filter === 'un' ? !i.explained : i.explained));
-    const amtTxt = (i: Item) => { const hs = HEAD_KEYS.filter(h => Math.abs(i.amt[h]) > 0.004); const sh = HEAD_KEYS.filter(h => Math.abs(i.shift[h]) > 0.004);
-      return hs.length ? hs.map(h => `${HK_TXT[h]} ${fmt(i.amt[h])}`).join(' · ') : sh.length ? `moved: ${sh.map(h => `${HK_TXT[h]} ${fmt(i.shift[h])}`).join(' · ')}` : ''; };
     const months = monthsOf(this.inp!.fy), nextMonths = monthsOf(`${+this.inp!.fy.slice(0, 4) + 1}-${String(+this.inp!.fy.slice(2, 4) + 2).padStart(2, '0')}`).slice(0, 3), prev = monthsOf(`${+this.inp!.fy.slice(0, 4) - 1}-${this.inp!.fy.slice(2, 4)}`).slice(-3);
     const periodOpts = [...prev, ...months, ...nextMonths];
     const bookRow = (e: BEntry) => {
@@ -271,25 +268,39 @@ export class FlowTab {
       }
       return h;
     };
-    const items = list.map(i => {
-      const bl = i.books.map(id => byId.get(id)).filter(Boolean) as BEntry[];
-      const pl = i.portal.map(id => pById.get(id)).filter(Boolean) as Result['portal'];
-      const isOpen = this.open.has(i.text + i.bucket + i.months.join());
-      return `<details class="item ${i.explained ? 'ex' : 'un'}" data-key="${esc(i.text + i.bucket + i.months.join())}" ${isOpen ? 'open' : ''}><summary><span class="tag ${i.explained ? 'ok-tag' : ''}" ${i.explained ? '' : 'style="color:var(--err);background:var(--err-bg)"'}>${i.explained ? 'Explained' : 'Unexplained'}</span>
-          <span><b>${esc(i.category)}</b> · ${esc(i.text)}</span><span class="amt">${amtTxt(i)}</span>
-          <span class="why">${BLOCK_LABEL[i.block]} · ${esc(bucketLabel(i.bucket))}${i.months.length ? ` · ${i.months.map(ymLabel).join(', ')}` : ''} · ${bl.length} books line(s), ${new Set(pl.map(p => p.file + p.row)).size} portal line(s)</span></summary>
-        <div class="item-in">${bl.length ? `<p class="grp">Books lines</p><div class="tablewrap"><table class="fl"><tr><th>Date</th><th>Voucher</th><th>Party / particulars</th><th>Account</th><th>Head</th><th class="r">Amount</th><th>Flow row</th><th></th></tr>${bl.slice(0, 200).map(bookRow).join('')}</table></div>${bl.length > 200 ? `<p class="muted">First 200 of ${bl.length}; all of them are in the workbook.</p>` : ''}` : ''}
+    const rc = reconcile(r);
+    const detail = (ev: ReconEvent) => {
+      const bl = ev.books.map(id => byId.get(id)).filter(Boolean) as BEntry[];
+      const pl = ev.portal.map(id => pById.get(id)).filter(Boolean) as Result['portal'];
+      return `<div class="item-in">${bl.length ? `<p class="grp">Books lines</p><div class="tablewrap"><table class="fl"><tr><th>Date</th><th>Voucher</th><th>Party / particulars</th><th>Account</th><th>Head</th><th class="r">Amount</th><th>Flow row</th><th></th></tr>${bl.slice(0, 200).map(bookRow).join('')}</table></div>${bl.length > 200 ? `<p class="muted">First 200 of ${bl.length}; all of them are in the workbook.</p>` : ''}` : ''}
           ${pl.length ? `<p class="grp">Portal lines</p><div class="tablewrap"><table class="fl"><tr><th>Ledger</th><th>Date</th><th>Reference</th><th>Return period</th><th>Description</th><th>Head</th><th>Part</th><th class="r">Amount</th></tr>${pl.slice(0, 200).map(p => `<tr><td>${PORTAL_LABEL[p.kind]}</td><td>${esc(p.date)}</td><td>${esc(p.ref)}</td><td>${ymLabel(p.month)}</td><td>${esc(p.desc)}${p.used && p.used !== '-' ? ` (${esc(p.used)})` : ''}</td><td>${p.head}</td><td>${p.comp}</td><td class="r">${fmt(p.amount)}</td></tr>`).join('')}</table></div>` : ''}
-          ${!bl.length && !pl.length ? '<p class="muted">From the balances: see Opening and closing balances.</p>' : ''}</div></details>`;
-    }).join('');
-    const un = r.items.filter(i => !i.explained).length;
-    $('flReasons').innerHTML = `<div class="rv-bar"><span class="muted">${r.items.length} item(s): ${r.items.length - un} explained, ${un} unexplained.</span>
-      <div class="seg">${(['all', 'un', 'ex'] as const).map(v => `<button data-f="${v}" class="${this.filter === v ? 'on' : ''}">${v === 'all' ? 'All' : v === 'un' ? `Unexplained (${un})` : 'Explained'}</button>`).join('')}</div></div>
-      ${items || '<p class="ok-text">Nothing to explain: books and portal agree for the period.</p>'}
+          ${!bl.length && !pl.length ? '<p class="muted">From the balances: see Opening and closing balances above.</p>' : ''}</div>`;
+    };
+    const tagUn = '<span class="tag" style="color:var(--err);background:var(--err-bg)">Unexplained</span> ';
+    const evText = (ev: ReconEvent) => `${ev.explained ? '' : tagUn}<b>${esc(ev.what)}</b><div class="muted" style="font-size:12.5px">${esc(ev.action)}${ev.vouchers ? ` · ${esc(ev.vouchers)}` : ''}</div>
+      <button class="link" data-ev="${esc(ev.key)}">${this.open.has(ev.key) ? 'Hide entries' : 'Show entries'}</button>`;
+    const stmt = (s: ReconStatement) => {
+      const hs = s.heads, n = hs.length + 2;
+      const amts = (f: (h: HeadK) => number, cls = '') => hs.map(h => `<td class="r ${cls}">${fmt(f(h))}</td>`).join('') + `<td class="r ${cls}"><b>${fmt(hs.reduce((t, h) => t + f(h), 0))}</b></td>`;
+      const anyUn = hs.some(h => Math.abs(s.unexplained[h]) > 0.004);
+      return `<p class="grp">${esc(ledgerLabel(s.block))}</p><div class="tablewrap"><table class="fl rec"><tr><th></th>${hs.map(h => `<th class="r">${HK_TXT[h]}</th>`).join('')}<th class="r">Total</th></tr>
+        <tr class="tot"><td>Closing as per books</td>${amts(h => s.books[h])}</tr>
+        ${s.lines.map(ev => `<tr class="${ev.explained ? '' : 'unx'}"><td>${evText(ev)}</td>${amts(h => -ev.effect[h])}</tr>${this.open.has(ev.key) ? `<tr><td colspan="${n}">${detail(ev)}</td></tr>` : ''}`).join('')
+          || `<tr><td colspan="${n}" class="ok-text">No difference: books and portal agree.</td></tr>`}
+        <tr class="tot"><td>Closing as per portal</td>${amts(h => s.portal[h])}</tr>
+        ${anyUn ? `<tr><td class="neg">Of which unexplained</td>${amts(h => -s.unexplained[h], 'neg')}</tr>` : ''}
+        ${hs.some(h => Math.abs(s.gap[h]) > 0.004) ? `<tr><td class="neg">Not reconciled (should be nil)</td>${amts(h => -s.gap[h], 'neg')}</tr>` : ''}</table></div>`;
+    };
+    const ne = rc.noEffect;
+    const unN = rc.events.filter(e => !e.explained).length;
+    $('flReasons').innerHTML = `<p class="muted" style="margin:0 0 6px">Each statement starts from the closing balance as per books, adds or takes away each item, and ends at the closing balance as per the portal. ${unN ? `<span class="warn-error">${unN} item(s) are unexplained: check those first.</span>` : '<span class="ok-text">Every difference is explained.</span>'}</p>
+      ${rc.statements.map(stmt).join('')}
+      ${ne.length ? `<details class="rv-hist" ${this.open.has('__ne') ? 'open' : ''} data-ne="1" style="margin-top:14px"><summary class="eyebrow" style="cursor:pointer">Differences that reversed within the period: no effect on the closing (${ne.length})</summary>
+        <div class="tablewrap" style="margin-top:8px"><table class="fl rec"><tr><th></th><th>Ledger</th><th class="r">Amount involved</th></tr>${ne.map(ev => `<tr class="${ev.explained ? '' : 'unx'}"><td>${evText(ev)}</td><td>${esc(ledgerLabel(ev.block))}</td><td class="r">${ev.involved ? fmt(ev.involved) : '–'}</td></tr>${this.open.has(ev.key) ? `<tr><td colspan="3">${detail(ev)}</td></tr>` : ''}`).join('')}</table></div></details>` : ''}
       ${this.st.audit.length ? `<details class="rv-hist"><summary class="eyebrow" style="cursor:pointer">Your changes (${this.st.audit.length})</summary><ol>${this.st.audit.slice().reverse().map(a => `<li>${esc(a.when)} · <b>${esc(a.change)}</b> · ${esc(a.record)}: ${esc(a.from)} → ${esc(a.to)}${a.remark ? ` · <i>${esc(a.remark)}</i>` : ''}</li>`).join('')}</ol></details>` : ''}`;
     const box = $('flReasons');
-    box.querySelectorAll('button[data-f]').forEach((el: any) => (el.onclick = () => { this.filter = el.dataset.f; this.renderReasons(); }));
-    box.querySelectorAll('details.item').forEach((el: any) => el.addEventListener('toggle', () => { if (el.open) this.open.add(el.dataset.key); else this.open.delete(el.dataset.key); }));
+    box.querySelectorAll('button[data-ev]').forEach((el: any) => (el.onclick = (ev: Event) => { ev.preventDefault(); const k = el.dataset.ev; if (this.open.has(k)) this.open.delete(k); else this.open.add(k); this.renderReasons(); }));
+    const neEl = box.querySelector('details[data-ne]') as any; if (neEl) neEl.addEventListener('toggle', () => { if (neEl.open) this.open.add('__ne'); else this.open.delete('__ne'); });
     box.querySelectorAll('button[data-edit]').forEach((el: any) => (el.onclick = (ev: Event) => { ev.preventDefault(); this.editing = this.editing === el.dataset.edit ? '' : el.dataset.edit; this.renderReasons(); }));
     box.querySelectorAll('button[data-reset]').forEach((el: any) => (el.onclick = () => {
       const e = byId.get(el.dataset.reset)!; const old = this.st.ov[e.id];

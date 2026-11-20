@@ -4,6 +4,7 @@ import { C, SheetSpec, col, serial, writeBook } from '../xlsxbook';
 import { BUCKETS, BLOCK_LABEL, Block, INTERNAL, PORTAL_LABEL, UNMAPPED, ACC_TYPE_LABEL, bucketOf } from './types';
 import { HEAD_KEYS, HeadK, Result, bucketLabel, ymLabel } from './engine';
 import { FLOW_GUIDE } from './guide';
+import { ledgerLabel, reconcile } from './recon';
 
 export interface AuditRow { when: string; change: string; record: string; from: string; to: string; remark: string }
 export interface FlowMeta { gstin: string; legalName: string; fy: string; from: string; to: string; files: { name: string; kind: string; note: string }[]; audit: AuditRow[]; builtAt: string }
@@ -19,8 +20,9 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   // one portal reference per file line (a line has several heads / components)
   const pLine = new Map<string, string>();
   r.portal.forEach(e => { const k = `${e.file}#${e.row}`; if (!pLine.has(k)) pLine.set(k, `PL${String(pLine.size + 1).padStart(5, '0')}`); pref.set(e.id, pLine.get(k)!); });
+  const rc = reconcile(r);
   const itemsOf = new Map<string, string[]>();
-  for (const it of r.items) for (const id of [...it.books, ...it.portal]) { const a = itemsOf.get(id) || []; if (!a.includes(it.id)) a.push(it.id); itemsOf.set(id, a); }
+  for (const ev of rc.events) for (const id of [...ev.books, ...ev.portal]) { const a = itemsOf.get(id) || []; if (!a.includes(ev.id)) a.push(ev.id); itemsOf.set(id, a); }
   const period = `${ymLabel(meta.from)} to ${ymLabel(meta.to)}`;
   const title = (t: string): C[][] => [[{ v: t, s: 'title' }], [{ v: `${meta.legalName || 'Client'} · GSTIN ${meta.gstin || '-'} · FY ${meta.fy} · ${period} · Prepared by James & James LLP`, s: 'sub' }], []];
   const hdr = (cols: string[]): C[] => cols.map(c => ({ v: c, s: 'hdr' }));
@@ -96,37 +98,47 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   const fixTotals = (rows: C[][]) => rows.forEach(rw => { const t = rw[6] as any; if (t && typeof t === 'object' && t.f?.startsWith('SUM(B')) t.v = N(rw.slice(1, 6).reduce((s: number, c: any) => s + (typeof c === 'object' && c ? +c.v || 0 : 0), 0)); });
   const fBooks = flowSheet('Books'), fPortal = flowSheet('Portal'), fDiff = flowSheet('Difference');
   [fBooks, fPortal, fDiff].forEach(fixTotals);
-  // under the difference: what the reconciling items explain, per row
-  fDiff.push([{ v: 'Explained and unexplained, by row', s: 'sec' }, ...HEAD_KEYS.map(() => ({ v: '', s: 'sec' } as C)), { v: '', s: 'sec' }, { v: '', s: 'sec' }]);
-  fDiff.push(hdr(['Flow row', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'Row code / check']));
-  const RI = 'Recon_Items';
-  const itemCol = (h: HeadK) => col(7 + HEAD_KEYS.indexOf(h)); // H..L
-  for (const L of layout) {
-    const lines = [...(L.open ? [{ key: 'opening', at: L.open }] : []), ...L.rows];
-    for (const { key, at } of lines) {
-      const sumIt = (h: HeadK, expl?: string) => `SUMIFS(${RI}!$${itemCol(h)}:$${itemCol(h)},${RI}!$B:$B,"${L.block}",${RI}!$C:$C,"${key}"${expl ? `,${RI}!$F:$F,"${expl}"` : ''})`;
-      const its = r.items.filter(i => i.block === L.block && i.bucket === key);
-      const un = (h: HeadK) => N(its.filter(i => !i.explained).reduce((s, i) => s + i.amt[h], 0));
-      const all = (h: HeadK) => N(its.reduce((s, i) => s + i.amt[h], 0));
-      if (!its.length && HEAD_KEYS.every(h => Math.abs(+((fDiff[at - 1][1 + HEAD_KEYS.indexOf(h)] as any)?.v || 0)) < 0.005)) continue;
-      const lab = key === 'opening' ? `${BLOCK_LABEL[L.block]}: opening balance` : `${BLOCK_LABEL[L.block]}: ${bucketLabel(key)}`;
-      const r1 = fDiff.length + 1;
-      fDiff.push([`${lab}: unexplained`, ...HEAD_KEYS.map(h => ({ f: sumIt(h, 'No'), v: un(h) } as C)), { f: `SUM(B${r1}:F${r1})`, v: N(HEAD_KEYS.reduce((s, h) => s + un(h), 0)) }, key]);
-      const r2 = fDiff.length + 1;
-      fDiff.push([{ v: `${lab}: difference not covered by any item (should be nil)`, s: 'note' }, ...HEAD_KEYS.map((h, i) => ({ f: `${HC[i]}${at}-${sumIt(h)}`, v: N(+((fDiff[at - 1][1 + i] as any)?.v || 0) - all(h)) } as C)), { f: `SUM(B${r2}:F${r2})`, v: 0 }, 'check']);
-    }
-  }
-  fixTotals(fDiff);
+  fDiff.push([{ v: 'The Reconciliation sheet takes the closing as per books to the closing as per portal, item by item (Recon_Items).', s: 'note' }]);
 
-  // ---- Recon_Items
-  const items: C[][] = [...title('Reconciling items: why books and portal differ'), hdr(['ID', 'Block', 'Row code', 'Flow row', 'Category', 'Explained', 'Months', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'Moved between months (nil for the period)', 'Reason', 'Books lines', 'Portal lines'])];
-  r.items.forEach((it, i) => {
-    const row = BL_H + 1 + i;
-    items.push([it.id, it.block, it.bucket, bucketLabel(it.bucket), it.category, it.explained ? 'Yes' : 'No', it.months.map(ymLabel).join(', '), ...HEAD_KEYS.map(h => it.amt[h] || null),
-      { f: `SUM(H${row}:L${row})`, v: N(HEAD_KEYS.reduce((s, h) => s + it.amt[h], 0)) }, N(HEAD_KEYS.reduce((s, h) => s + it.shift[h], 0)) || null, { v: it.text, s: 'wrap' },
-      { v: [...new Set(it.books.map(id => bref.get(id)).filter(Boolean))].join(', '), s: 'wrap' }, { v: [...new Set(it.portal.map(id => pref.get(id)).filter(Boolean))].join(', '), s: 'wrap' }]);
-  });
-  items.push([], [{ v: 'Amounts are books minus portal for the flow row, in the row\'s own direction. Explained = No means the records do not show why: correct the classification of the lines, or the books / returns themselves.', s: 'note' }]);
+  // ---- Recon_Items: one row per event; amounts are the adjustment that takes the books closing to the portal closing
+  const IH = (h: HeadK) => col(7 + HEAD_KEYS.indexOf(h)); // H..L
+  const items: C[][] = [...title('Reconciling items: books to portal'), hdr(['No.', 'Ledger', 'Effect on closing', 'Status', 'What happened', 'Return period(s)', 'Vouchers', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'Amount involved (no effect on closing)', 'Action', 'Flow row(s)', 'Books lines', 'Portal lines'])];
+  const evRow = new Map<string, number>();
+  const evLine = (ev: typeof rc.events[number]) => {
+    const row = items.length + 1; evRow.set(ev.id, row);
+    const adj = (h: HeadK) => (ev.affects ? N(-ev.effect[h]) : 0);
+    items.push([ev.id, ledgerLabel(ev.block), ev.affects ? 'Yes' : 'No', ev.explained ? 'Explained' : 'Unexplained', { v: ev.what, s: 'wrap' }, ev.months.map(ymLabel).join(', '), { v: ev.vouchers, s: 'wrap' },
+      ...HEAD_KEYS.map(h => (Math.abs(adj(h)) > 0.004 ? adj(h) : null)), { f: `SUM(H${row}:L${row})`, v: N(HEAD_KEYS.reduce((t, h) => t + adj(h), 0)) },
+      ev.affects ? null : ev.involved || null, { v: ev.action, s: 'wrap' }, ev.rows.join(', '),
+      { v: [...new Set(ev.books.map(id => bref.get(id)).filter(Boolean))].join(', '), s: 'wrap' }, { v: [...new Set(ev.portal.map(id => pref.get(id)).filter(Boolean))].join(', '), s: 'wrap' }]);
+  };
+  rc.events.filter(e => e.affects).forEach(evLine);
+  const ne = rc.events.filter(e => !e.affects);
+  if (ne.length) { items.push([], [{ v: 'Differences that reversed within the period: no effect on the closing', s: 'sec' }, ...Array(17).fill(0).map(() => ({ v: '', s: 'sec' } as C))]); ne.forEach(evLine); }
+  items.push([], [{ v: 'Amounts are what to add to the closing as per books to reach the closing as per portal. Unexplained items are differences the records do not explain: correct the classification of the lines in the Loader, or the books / returns themselves.', s: 'note' }]);
+
+  // ---- Reconciliation: closing as per books → items → closing as per portal (formulas over the flow sheets and Recon_Items)
+  const rec: C[][] = [...title('Reconciliation: closing balance as per books to the GST portal'), hdr(['', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'Action', 'Item'])];
+  for (const st of rc.statements) {
+    const L = layout.find(x => x.block === st.block)!;
+    rec.push([{ v: ledgerLabel(st.block), s: 'sec' }, ...Array(8).fill(0).map(() => ({ v: '', s: 'sec' } as C))]);
+    const rb = rec.length + 1;
+    rec.push([{ v: 'Closing balance as per books', s: 'bold' }, ...HEAD_KEYS.map((h, i) => ({ f: `Flow_Books!${HC[i]}${L.close}`, v: N(st.books[h]), s: 'numB' } as C)), { f: `SUM(B${rb}:F${rb})`, v: N(HEAD_KEYS.reduce((t, h) => t + st.books[h], 0)), s: 'numB' }]);
+    const lr: number[] = [];
+    for (const ev of st.lines) {
+      const row = rec.length + 1, er = evRow.get(ev.id)!; lr.push(row);
+      rec.push([{ v: `${ev.explained ? '' : 'UNEXPLAINED: '}${ev.what}`, s: 'wrap' }, ...HEAD_KEYS.map(h => ({ f: `Recon_Items!${IH(h)}${er}`, v: N(-ev.effect[h]) } as C)), { f: `SUM(B${row}:F${row})`, v: N(HEAD_KEYS.reduce((t, h) => t - ev.effect[h], 0)) }, { v: ev.action, s: 'wrap' }, ev.id]);
+    }
+    if (!st.lines.length) rec.push([{ v: 'No difference: books and portal agree.', s: 'note' }]);
+    const rp = rec.length + 1;
+    rec.push([{ v: 'Closing balance as per portal', s: 'bold' }, ...HEAD_KEYS.map((h, i) => ({ f: `Flow_Portal!${HC[i]}${L.close}`, v: N(st.portal[h]), s: 'numTot' } as C)), { f: `SUM(B${rp}:F${rp})`, v: N(HEAD_KEYS.reduce((t, h) => t + st.portal[h], 0)), s: 'numTot' }]);
+    const ru = rec.length + 1, led = ledgerLabel(st.block);
+    rec.push([{ v: 'Of which unexplained', s: 'note' }, ...HEAD_KEYS.map(h => ({ f: `SUMIFS(Recon_Items!$${IH(h)}:$${IH(h)},Recon_Items!$B:$B,"${led}",Recon_Items!$C:$C,"Yes",Recon_Items!$D:$D,"Unexplained")`, v: N(-st.unexplained[h]) } as C)), { f: `SUM(B${ru}:F${ru})`, v: N(-HEAD_KEYS.reduce((t, h) => t + st.unexplained[h], 0)) }]);
+    const rn = rec.length + 1;
+    rec.push([{ v: 'Not reconciled (should be nil)', s: 'note' }, ...HEAD_KEYS.map((h, i) => ({ f: `${HC[i]}${rb}${lr.map(x => `+${HC[i]}${x}`).join('')}-${HC[i]}${rp}`, v: N(st.gap[h]) } as C)), { f: `SUM(B${rn}:F${rn})`, v: N(HEAD_KEYS.reduce((t, h) => t + st.gap[h], 0)) }]);
+    rec.push([]);
+  }
+  rec.push([{ v: `Differences that reversed within the period (timing between months, amounts shown net on the portal) do not change the closing: they are listed at the end of Recon_Items (${ne.length}).`, s: 'note' }]);
   // ---- Cross_Checks
   const chk: C[][] = [...title('Cross-checks between the portal ledgers and with GSTR-3B'), hdr(['Check', 'Return period', 'Head', 'A', 'Amount A', 'B', 'Amount B', 'Difference', 'Status', 'Detail'])];
   r.checks.forEach((c, i) => { const row = BL_H + 1 + i; chk.push([c.area, ymLabel(c.period), c.head, c.aLabel, c.a, c.bLabel, c.b, { f: `E${row}-G${row}`, v: c.diff }, { f: `IF(ABS(H${row})<=1,"OK","Check")`, v: c.ok ? 'OK' : 'Check', s: c.ok ? 'ok' : 'bad' }, c.note || '']); });
@@ -160,8 +172,9 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
     [{ v: 'How to read this workbook', s: 'sec' }, { v: '', s: 'sec' }],
     ['Flow_Books', 'Opening, movements and closing of input tax credit, tax liability, the electronic cash ledger and interest / fees, from the books only.'],
     ['Flow_Portal', 'The same rows from the portal ledgers only (credit ledger, cash ledger, liability register), by return period.'],
-    ['Flow_Difference', 'Books minus portal, row by row, and below it what the reconciling items explain. The last lines must be nil.'],
-    ['Recon_Items', 'Each reason, worked out from the records: opening balances, timing, entries after the period, tax head, netting on the portal, fees booked to tax. Explained = No lists what the records do not explain.'],
+    ['Reconciliation', 'For each ledger: closing balance as per books, each reconciling item, closing balance as per portal. "Not reconciled" must be nil; "Of which unexplained" shows what the records do not explain.'],
+    ['Flow_Difference', 'Books minus portal, row by row.'],
+    ['Recon_Items', 'One row per reconciling item, worked out from the records: what happened, the vouchers, the amount by tax head and what to do. Items that reversed within the period (no effect on the closing) are at the end.'],
     ['Cross_Checks', 'The portal ledgers against each other (cash ledger vs liability paid in cash; credit ledger vs liability paid by ITC) and against GSTR-3B where its PDFs were loaded.'],
     ['Month_wise', 'Books, portal and difference for each row, head and month.'],
     ['Books_Lines / Portal_Lines', 'Every input line with its flow row, how it was classified and the reconciling items it belongs to. All the figures above are SUMIFS over these sheets.'],
@@ -175,10 +188,11 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   ];
   const sheets: SheetSpec[] = [
     { name: 'Read Me', rows: rm, widths: [28, 120] },
+    { name: 'Reconciliation', rows: rec, widths: [70, 14, 14, 14, 12, 14, 14, 60, 6], freeze: { row: BL_H, col: 1 }, tab: '2C388E' },
     { name: 'Flow_Books', rows: fBooks, widths: [52, 16, 16, 16, 16, 18, 18, 14], freeze: { row: 5, col: 1 }, tab: '2C388E' },
     { name: 'Flow_Portal', rows: fPortal, widths: [52, 16, 16, 16, 16, 18, 18, 14], freeze: { row: 5, col: 1 }, tab: '2C388E' },
     { name: 'Flow_Difference', rows: fDiff, widths: [70, 16, 16, 16, 16, 18, 18, 16], freeze: { row: 5, col: 1 }, tab: '2C388E' },
-    { name: 'Recon_Items', rows: items, widths: [8, 7, 14, 32, 20, 10, 22, 13, 13, 13, 11, 15, 14, 16, 70, 40, 40], freeze: { row: BL_H, col: 1 }, filter: { row: BL_H, cols: 17 } },
+    { name: 'Recon_Items', rows: items, widths: [6, 20, 9, 12, 60, 16, 44, 13, 13, 13, 11, 14, 14, 16, 50, 26, 30, 30], freeze: { row: BL_H, col: 1 }, filter: { row: BL_H, cols: 18 } },
     { name: 'Cross_Checks', rows: chk, widths: [44, 12, 8, 30, 15, 32, 15, 14, 9, 80], freeze: { row: BL_H }, filter: { row: BL_H, cols: 10 } },
     { name: 'Month_wise', rows: mw, widths: [24, 36, 8, ...r.months.flatMap(() => [13, 13, 13]), 14], freeze: { row: BL_H, col: 3 } },
     { name: 'Books_Lines', rows: books, widths: [10, 26, 6, 11, 8, 12, 8, 14, 14, 30, 26, 22, 7, 13, 13, 13, 6, 14, 30, 13, 40, 14, 40], freeze: { row: BL_H, col: 1 }, filter: { row: BL_H, cols: 23 } },

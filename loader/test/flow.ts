@@ -60,6 +60,18 @@ const nov = r.books.filter(e => un[0].books.includes(e.id) && e.head !== 'ALL');
 const r2 = run({ ...inp, overrides: Object.fromEntries(nov.map(e => [e.id, { period: '2025-12' }])) });
 assert.ok(r2.items.some(i => !i.explained && i.months.includes('2025-12')), 'a changed period is still checked against the portal');
 
+// reconciliation statement: books closing + items = portal closing, one line per real event
+import { reconcile } from '../src/flow/recon';
+const rc = reconcile(r);
+for (const s of rc.statements) for (const h of HEAD_KEYS) assert.ok(Math.abs(s.gap[h]) < 0.01, `${s.block} ${h} reconciles to the portal`);
+const st = (b: string) => rc.statements.find(s => s.block === b)!;
+assert.deepEqual(st('itc').lines.map(e => e.category), ['Opening balance', 'After the period', 'Tax head'], 'ITC: opening, Mar ITC claimed in Apr, cross-utilisation');
+assert.deepEqual(st('liab').lines.map(e => [e.category, e.explained]), [['Tax head', true], ['Fee booked to tax', true], ['Amount differs', false]], 'liability: wrong head, late fee, unreported Nov sale');
+assert.deepEqual(st('cash').lines.map(e => e.category), ['After the period'], 'cash: challan paid after the period');
+const netted = rc.noEffect.filter(e => e.category === 'Netted on portal');
+assert.equal(netted.length, 1, 'the June reversal is one event, not two rows');
+assert.ok(rc.noEffect.every(e => HEAD_KEYS.every(h => Math.abs(e.effect[h]) < 0.005)), 'no-effect events do not move the closing');
+
 const fmt = (x: number) => x.toFixed(2).padStart(12);
 if (process.env.SHOW) {
 for (const [name, st] of [['BOOKS', r.flowBooks], ['PORTAL', r.flowPortal]] as const) {
