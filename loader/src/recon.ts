@@ -5,8 +5,33 @@ import { fyOfDate, r2 } from './util';
 const normNo = (s: any) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const digits = (s: any) => String(s ?? '').replace(/\D/g, '').replace(/^0+/, '');
 const nz = (v: any) => (typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/,/g, '')) || 0);
-const TOL = 1;
 const tax = (a: number[]) => r2(a[1] + a[2] + a[3] + a[4]);
+
+/** how documents are paired. Defaults = the Loader's Standard preset */
+export interface MatchOptions {
+  rules: { exact: boolean; digits: boolean; tail: boolean; dateAmt: boolean; otherGstin: boolean; supplierTotal: boolean };
+  /** amount tolerance in rupees */
+  tol: number;
+  /** extra tolerance in % of the amount, for the digits / last-digits rules */
+  pct: number;
+  /** GSTIN + date + amount rule: dates may differ by this many days */
+  days: number;
+  /** compare tax only, or taxable value and tax */
+  compare: 'tax' | 'both';
+}
+export const DEFAULT_MATCH: MatchOptions = { rules: { exact: true, digits: true, tail: true, dateAmt: true, otherGstin: true, supplierTotal: true }, tol: 1, pct: 1, days: 3, compare: 'both' };
+export const MATCH_PRESETS: Record<string, MatchOptions> = {
+  Strict: { rules: { exact: true, digits: false, tail: false, dateAmt: false, otherGstin: false, supplierTotal: false }, tol: 1, pct: 0, days: 0, compare: 'both' },
+  Standard: DEFAULT_MATCH,
+  Lenient: { rules: { exact: true, digits: true, tail: true, dateAmt: true, otherGstin: true, supplierTotal: true }, tol: 10, pct: 2, days: 7, compare: 'tax' },
+};
+export function describeMatch(o: MatchOptions) {
+  const names: [keyof MatchOptions['rules'], string][] = [['exact', 'invoice no.'], ['digits', 'digits of no.'], ['tail', 'last digits'], ['dateAmt', `GSTIN+date±${o.days}d+amount`], ['otherGstin', 'no.+amount with other GSTIN'], ['supplierTotal', 'supplier totals']];
+  return `Matching: manual codes, ${names.filter(([k]) => o.rules[k]).map(([, n]) => n).join(', ')}; tolerance Rs ${o.tol}${o.pct ? ` / ${o.pct}%` : ''}; compares ${o.compare === 'tax' ? 'tax only' : 'taxable value and tax'}.`;
+}
+/** documents the user separated: never paired automatically (Match code X) */
+export type KeepApart = Set<string>;
+const dayNo = (d: string) => { const m = String(d).match(/^(\d{2})-(\d{2})-(\d{4})$/); return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) / 86400000 : NaN; };
 
 /** Excel serial / dd-mm-yyyy / yyyy-mm-dd → dd-mm-yyyy */
 export function toDate(v: any): string {
@@ -53,29 +78,37 @@ const group = <T>(list: T[], key: (x: T) => string) => { const m = new Map<strin
 const sumAmt = (rows: number[][]) => rows.reduce((a, b) => a.map((v, i) => r2(v + (b[i] || 0))), [0, 0, 0, 0, 0]);
 
 /** pair docs: exact key, then digits-only number, then GSTIN+date+amount, then number+amount across GSTINs */
-function pair(books: Doc[], ret: Doc[], gstinMatters: boolean) {
+function pair(books: Doc[], ret: Doc[], gstinMatters: boolean, o: MatchOptions = DEFAULT_MATCH) {
+  const TOL = o.tol;
+  const near = (x: number, y: number, pct: boolean) => Math.abs(x - y) <= Math.max(TOL, pct ? Math.abs(y) * o.pct / 100 : 0);
+  /** amounts agree: tax, and taxable value too when the options say so */
+  const amtOk = (d: Doc, b: Doc, pct = false) => near(tax(d.amt), tax(b.amt), pct) && (o.compare === 'tax' || near(d.amt[0], b.amt[0], pct));
   const pairs: { b?: Doc; r?: Doc; basis: string }[] = [];
   const idx = new Map<string, Doc[]>();
   const add = (k: string, d: Doc) => { if (!idx.has(k)) idx.set(k, []); idx.get(k)!.push(d); };
   ret.forEach(d => add(`${gstinMatters ? d.gstin : ''}|${normNo(d.no)}`, d));
   const take = (k: string, ok: (d: Doc) => boolean = () => true) => { const l = idx.get(k); const d = l?.find(x => !x.used && ok(x)); if (d) d.used = true; return d; };
-  for (const b of books.filter(x => !x.used)) { const r = take(`${gstinMatters ? b.gstin : ''}|${normNo(b.no)}`); if (r) { b.used = true; pairs.push({ b, r, basis: 'Invoice no.' }); } }
+  if (o.rules.exact) for (const b of books.filter(x => !x.used)) { const r = take(`${gstinMatters ? b.gstin : ''}|${normNo(b.no)}`); if (r) { b.used = true; pairs.push({ b, r, basis: 'Invoice no.' }); } }
   const free = () => ret.filter(d => !d.used);
-  for (const b of books.filter(x => !x.used)) {
+  if (o.rules.digits) for (const b of books.filter(x => !x.used)) {
     const dg = digits(b.no); if (!dg) continue;
-    const r = free().find(d => (!gstinMatters || d.gstin === b.gstin) && digits(d.no) === dg && Math.abs(tax(d.amt) - tax(b.amt)) <= Math.max(TOL, Math.abs(tax(b.amt)) * 0.01));
+    const r = free().find(d => (!gstinMatters || d.gstin === b.gstin) && digits(d.no) === dg && amtOk(d, b, true));
     if (r) { r.used = b.used = true; pairs.push({ b, r, basis: 'Digits of invoice no.' }); }
   }
-  for (const b of books.filter(x => !x.used)) {
-    const r = free().find(d => (!gstinMatters || d.gstin === b.gstin) && suffixMatch(d.no, b.no) && Math.abs(tax(d.amt) - tax(b.amt)) <= Math.max(TOL, Math.abs(tax(b.amt)) * 0.01) && Math.abs(d.amt[0] - b.amt[0]) <= Math.max(TOL, Math.abs(b.amt[0]) * 0.01));
+  if (o.rules.tail) for (const b of books.filter(x => !x.used)) {
+    const r = free().find(d => (!gstinMatters || d.gstin === b.gstin) && suffixMatch(d.no, b.no) && near(tax(d.amt), tax(b.amt), true) && near(d.amt[0], b.amt[0], true));
     if (r) { r.used = b.used = true; pairs.push({ b, r, basis: 'Last digits of invoice no.' }); }
   }
-  for (const b of books.filter(x => !x.used)) {
-    const r = free().find(d => d.gstin === b.gstin && d.date === b.date && Math.abs(tax(d.amt) - tax(b.amt)) <= TOL && Math.abs(d.amt[0] - b.amt[0]) <= TOL);
-    if (r) { r.used = b.used = true; pairs.push({ b, r, basis: 'GSTIN + date + amount' }); }
+  if (o.rules.dateAmt) for (const b of books.filter(x => !x.used)) {
+    if (!b.gstin) continue;
+    const bd = dayNo(b.date);
+    const near0 = (d: Doc) => d.date === b.date || Math.abs(dayNo(d.date) - bd) <= o.days;
+    const cands = free().filter(d => d.gstin === b.gstin && near0(d) && near(tax(d.amt), tax(b.amt), false) && near(d.amt[0], b.amt[0], false));
+    const r = cands.sort((x, y) => Math.abs(dayNo(x.date) - bd) - Math.abs(dayNo(y.date) - bd))[0];
+    if (r) { r.used = b.used = true; pairs.push({ b, r, basis: r.date === b.date ? 'GSTIN + date + amount' : `GSTIN + date (±${Math.abs(dayNo(r.date) - bd)}d) + amount` }); }
   }
-  if (gstinMatters) for (const b of books.filter(x => !x.used)) {
-    const r = free().find(d => normNo(d.no) === normNo(b.no) && Math.abs(tax(d.amt) - tax(b.amt)) <= TOL);
+  if (gstinMatters && o.rules.otherGstin) for (const b of books.filter(x => !x.used)) {
+    const r = free().find(d => normNo(d.no) === normNo(b.no) && amtOk(d, b));
     if (r) { r.used = b.used = true; pairs.push({ b, r, basis: 'Invoice no. + amount (GSTIN differs)' }); }
   }
   for (const b of books.filter(x => !x.used)) pairs.push({ b, basis: '' });
@@ -84,7 +117,8 @@ function pair(books: Doc[], ret: Doc[], gstinMatters: boolean) {
 }
 
 // ---------------------------------------------------------------- purchases vs 2B
-export function reconPurchases(bookRows: any[][], b2bRows: any[][], cy: string, ny: string, remarks: Map<string, string>, manual: Manual = new Map(), notes: string[] = []) {
+export function reconPurchases(bookRows: any[][], b2bRows: any[][], cy: string, ny: string, remarks: Map<string, string>, manual: Manual = new Map(), notes: string[] = [], o: MatchOptions = DEFAULT_MATCH, keepApart: KeepApart = new Set()) {
+  const TOL = o.tol;
   // Books_Purchase columns: A date, B no, C supplier, D GSTIN, E type, F ITC type, G status, H claimed FY, ... M taxable, N C, O S, P I, Q cess
   const COMPARED = new Set(['B2B', 'SEZ-SERVICES', 'RCM-REG', 'IMPG', 'IMPG-SEZ']);
   const books: Doc[] = [], notCompared: Doc[] = [];
@@ -131,11 +165,15 @@ export function reconPurchases(bookRows: any[][], b2bRows: any[][], cy: string, 
   const isImp = (d: Doc) => /^IMPG/.test(d.extra.section || d.extra.type || '');
   // imports have no supplier GSTIN in books: match on BOE number only
   const man = applyManual(books, ret, manual, notes);
-  const pairs = [...man, ...pair(books.filter(b => !isImp(b)), ret.filter(r => !isImp(r)), true), ...pair(books.filter(isImp), ret.filter(isImp), false)];
+  // documents the user separated stay unmatched
+  const apart = [...books, ...ret].filter(d => !d.used && keepApart.has(d.id));
+  apart.forEach(d => (d.used = true));
+  const pairs = [...man, ...pair(books.filter(b => !isImp(b)), ret.filter(r => !isImp(r)), true, o), ...pair(books.filter(isImp), ret.filter(isImp), false, o),
+    ...apart.map(d => (d.id.startsWith('B|') ? { b: d, basis: '' } : { r: d, basis: '' }))];
   // supplier total: leftover unmatched documents of a supplier that add up to the same taxable value and tax on both sides
   const leftB = pairs.filter(p => p.b && !p.r), leftR = pairs.filter(p => p.r && !p.b);
-  for (const [g, bl] of group(leftB, p => p.b!.gstin)) {
-    const rl = leftR.filter(p => p.r!.gstin === g);
+  if (o.rules.supplierTotal) for (const [g, bl] of group(leftB.filter(p => !keepApart.has(p.b!.id)), p => p.b!.gstin)) {
+    const rl = leftR.filter(p => p.r!.gstin === g && !keepApart.has(p.r!.id));
     if (!g || !rl.length) continue;
     const B = merge(bl.map(p => p.b!)), R = merge(rl.map(p => p.r!));
     if (Math.abs(tax(B.amt) - tax(R.amt)) <= TOL && Math.abs(B.amt[0] - R.amt[0]) <= TOL) {
@@ -194,7 +232,7 @@ export function reconPurchases(bookRows: any[][], b2bRows: any[][], cy: string, 
     out.push([status, basisTxt, (b ?? r)!.gstin, b?.name || r?.name || '', b?.no ?? '', r?.no ?? '', b?.date ?? '', r?.date ?? '',
       ...B, ...R, r2((b?.amt[0] ?? 0) - (r?.amt[0] ?? 0)), r2((b ? tax(b.amt) : 0) - (r ? tax(r.amt) : 0)),
       r?.extra.period ? r.extra.period.slice(0, 2) + '/' + r.extra.period.slice(2) : '', r?.extra.section ?? '', r?.extra.avl ?? '',
-      b?.extra.status ?? '', b?.extra.claimFy ?? '', effect, code ?? '', remarkOf(remarks, id), id]);
+      b?.extra.status ?? '', b?.extra.claimFy ?? '', effect, code ?? (keepApart.has((b ?? r)!.id) ? 'X' : ''), remarkOf(remarks, id), id]);
   }
   for (const d of notCompared) {
     const id = `${d.id}~`;
@@ -224,7 +262,8 @@ export function reconPurchases(bookRows: any[][], b2bRows: any[][], cy: string, 
 }
 
 // ---------------------------------------------------------------- sales vs GSTR-1
-export function reconSales(bookRows: any[][], g1Rows: any[][], cy: string, ny: string, remarks: Map<string, string>, manual: Manual = new Map(), notes: string[] = []) {
+export function reconSales(bookRows: any[][], g1Rows: any[][], cy: string, ny: string, remarks: Map<string, string>, manual: Manual = new Map(), notes: string[] = [], o: MatchOptions = DEFAULT_MATCH, keepApart: KeepApart = new Set()) {
+  const TOL = o.tol;
   // Books_Sales: A date, B no, C customer, D GSTIN, E POS, F type, G doc type, H HSN, I UQC, J qty, K rate, L taxable, M C, N S, O I, P cess
   const bl = bookRows.filter(r => r && [11, 12, 13, 14, 15].some(i => nz(r[i]) !== 0));
   const cls = (dt: string) => (dt === 'CN' || dt === 'DN') ? 'N' : 'I';
@@ -254,15 +293,18 @@ export function reconSales(bookRows: any[][], g1Rows: any[][], cy: string, ny: s
   const bMain = books.filter(b => !SKIP.has(b.extra.type));
   const bB2c = books.filter(b => b.extra.type === 'B2C');
   const man = applyManual(books, ret, manual, notes);
-  const pairs = pair(bMain, ret, false);
+  const apart = [...books, ...ret].filter(d => !d.used && keepApart.has(d.id));
+  apart.forEach(d => (d.used = true));
+  const pairs = pair(bMain, ret, false, o);
+  const apartRows = apart.map(d => (d.id.startsWith('B|') ? { b: d, basis: '' } : { r: d, basis: '' }));
   // B2C books documents reported as B2C large / CDNUR
   const b2cMatches: typeof pairs = [];
   const retLeft = new Map(ret.filter(r => !r.used).map(r => [`${r.extra.dt === 'CN' || r.extra.dt === 'DN' ? 'N' : 'I'}|${normNo(r.no)}`, r]));
   for (const b of bB2c) {
     const r = retLeft.get(`${cls(b.extra.dt)}|${normNo(b.no)}`);
-    if (r && !r.used) { r.used = true; b2cMatches.push({ b, r, basis: 'Invoice no. (B2C large)' }); }
+    if (r && !r.used && !b.used) { r.used = b.used = true; b2cMatches.push({ b, r, basis: 'Invoice no. (B2C large)' }); }
   }
-  const all: { b?: Doc; r?: Doc; basis: string; code?: string }[] = [...man, ...pairs.filter(p => !(p.r && !p.b && p.r.used)), ...b2cMatches];
+  const all: { b?: Doc; r?: Doc; basis: string; code?: string }[] = [...man, ...pairs.filter(p => !(p.r && !p.b && p.r.used)), ...apartRows, ...b2cMatches];
   const out: any[][] = [];
   for (const { b, r, basis, code } of all) {
     let status: string, effect = '';
@@ -279,7 +321,7 @@ export function reconSales(bookRows: any[][], g1Rows: any[][], cy: string, ny: s
     out.push([status, basis, b?.gstin ?? '', r?.gstin ?? '', b?.name ?? '', b?.extra.dt ?? r?.extra.dt ?? '', b?.no ?? '', r?.no ?? '', b?.date ?? '', r?.date ?? '',
       r?.extra.section ?? '', r?.extra.period ? r.extra.period.slice(0, 2) + '/' + r.extra.period.slice(2) : '',
       b ? b.amt[0] : null, b ? tax(b.amt) : null, r ? r.amt[0] : null, r ? tax(r.amt) : null,
-      r2((b?.amt[0] ?? 0) - (r?.amt[0] ?? 0)), r2((b ? tax(b.amt) : 0) - (r ? tax(r.amt) : 0)), b?.extra.type ?? '', effect, code ?? '', remarkOf(remarks, id), id]);
+      r2((b?.amt[0] ?? 0) - (r?.amt[0] ?? 0)), r2((b ? tax(b.amt) : 0) - (r ? tax(r.amt) : 0)), b?.extra.type ?? '', effect, code ?? (keepApart.has((b ?? r)!.id) ? 'X' : ''), remarkOf(remarks, id), id]);
   }
   const order = ['In books, not in GSTR-1', 'In GSTR-1, not in books', 'Matched - value difference', 'Matched - GSTIN differs', 'Matched - reported in next FY', 'Matched - manual', 'Matched'];
   out.sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0]) || String(a[6] || a[7]).localeCompare(String(b[6] || b[7])));

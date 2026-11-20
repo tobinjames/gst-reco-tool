@@ -146,6 +146,53 @@
   table.sup tr.confirmed td { background:#f7fbf8; }
   button.small { padding:6px 14px; font-size:12.5px; }
   .ok-tag { color:var(--ok); background:var(--ok-bg); } .no-tag { color:var(--muted); background:#f0f1f5; }
+  /* review matches */
+  details.rv-set { border:1px solid var(--line); border-radius:var(--r); background:#fcfcfe; }
+  details.rv-set > summary { cursor:pointer; padding:12px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:var(--strong); }
+  details.rv-set > summary::before { display:none; }
+  .rv-set-in { padding:4px 16px 16px; display:grid; gap:14px; border-top:1px solid var(--line); padding-top:14px; }
+  .rv-rules { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; }
+  label.tg { display:inline-flex; flex-direction:row; align-items:center; gap:7px; font-weight:500; font-size:13px; color:var(--strong); cursor:pointer; white-space:nowrap; }
+  label.tg input { min-width:0; width:16px; height:16px; accent-color:var(--brand); }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(150px, 45%), 1fr)); gap:10px; margin:14px 0; }
+  button.kpi, div.kpi { text-align:left; display:grid; gap:2px; background:#fff; color:var(--strong); border:1px solid var(--line); border-left:4px solid var(--brand); box-shadow:none; padding:12px 14px; border-radius:var(--r-sm); font-weight:400; }
+  button.kpi:hover { background:var(--tint); }
+  button.kpi.on { box-shadow:0 0 0 3px var(--ring); border-color:var(--brand); }
+  .kpi span { font-size:12px; color:var(--muted); font-weight:500; } .kpi b { font-size:22px; font-weight:600; line-height:1.2; } .kpi em { font-style:normal; font-size:12px; color:var(--text); font-variant-numeric:tabular-nums; }
+  .kpi.ok { border-left-color:var(--ok); } .kpi.warn { border-left-color:#d49b1f; } .kpi.bad { border-left-color:var(--err); } .kpi.tot { border-left-color:var(--line-2); background:#fafbfd; }
+  .rv-bar { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin:6px 0 10px; }
+  .seg { display:inline-flex; border:1px solid var(--line-2); border-radius:999px; padding:3px; background:#fff; }
+  .seg button { background:none; color:var(--text); border:0; box-shadow:none; padding:6px 16px; border-radius:999px; font-size:13px; }
+  .seg button.on { background:var(--brand); color:#fff; }
+  button.ghost { background:#fff; color:var(--brand); box-shadow:none; }
+  button.ghost:hover { background:var(--tint); }
+  .rv-filters { display:grid; gap:10px; padding:12px 14px; border:1px solid var(--line); border-radius:var(--r-sm); background:#fcfcfe; }
+  .rv-filters .row { gap:10px 14px; }
+  .rv-filters input, .rv-filters select { min-width:0; padding:7px 10px; font-size:13.5px; }
+  .rv-filters select { padding-right:30px; }
+  .rv-filters label.grow { flex:1 1 220px; } .rv-filters label.grow input { width:100%; }
+  .fchips { display:flex; flex-wrap:wrap; gap:6px; }
+  button.fchip { background:#fff; color:var(--text); border:1px solid var(--line-2); box-shadow:none; padding:5px 12px; border-radius:999px; font-size:12.5px; font-weight:500; }
+  button.fchip span { color:var(--muted); margin-left:4px; font-weight:400; }
+  button.fchip.on { background:var(--brand); color:#fff; border-color:var(--brand); } button.fchip.on span { color:#dfe3ff; }
+  .rv-foot { display:flex; flex-wrap:wrap; gap:6px 18px; align-items:center; font-size:13px; padding:10px 14px; margin:10px 0; background:var(--tint); border-radius:var(--r-sm); color:var(--strong); font-variant-numeric:tabular-nums; }
+  .rv-sel { position:sticky; bottom:12px; z-index:3; display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; justify-content:space-between; padding:12px 16px; margin:10px 0; background:var(--strong); color:#fff; border-radius:var(--r-sm); box-shadow:0 8px 28px -10px rgba(22,27,46,.5); font-size:13px; font-variant-numeric:tabular-nums; }
+  .rv-sel .muted { color:#c3c8d8; } .rv-sel .acts { display:flex; gap:8px; align-items:center; } .rv-sel button.link { color:#dfe3ff; }
+  .rv-sel button.ghost { background:transparent; color:#fff; border-color:#8e97c9; }
+  .rv-tw { max-height:640px; overflow:auto; }
+  table.rv { font-size:13px; }
+  table.rv thead th { position:sticky; top:0; z-index:1; }
+  table.rv th.sortable { cursor:pointer; user-select:none; } table.rv th.sortable:hover { color:var(--brand); }
+  table.rv td { padding:7px 10px; } table.rv td.nw { white-space:nowrap; }
+  table.rv .small { font-size:11.5px; }
+  table.rv td.cb, table.rv th.cb { width:34px; } table.rv input[type=checkbox] { min-width:0; width:16px; height:16px; accent-color:var(--brand); }
+  table.rv tr.sel td { background:#eef0fb; }
+  table.rv tr.click { cursor:pointer; } table.rv tr.click:hover td { background:#f6f7fc; }
+  td.neg { color:var(--err); font-weight:500; }
+  .st { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 8px; border-radius:999px; background:#eef0f6; color:var(--text); white-space:nowrap; }
+  .st-matched, .st-agrees { background:var(--ok-bg); color:var(--ok); } .st-diff, .st-differs { background:var(--warn-bg); color:var(--warn); } .st-other, .st-manual { background:var(--tint); color:var(--brand); }
+  .st-books, .st-ret, .st-only { background:var(--err-bg); color:var(--err); }
+  details.rv-hist { margin-top:12px; font-size:13px; } details.rv-hist ol { margin:8px 0 0; padding-left:22px; display:grid; gap:4px; }
   /* mode picker */
   .modes { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
   button.mode { position:relative; text-align:left; background:#fff; color:var(--text); border:1.5px solid var(--line); box-shadow:none; padding:20px 22px 20px 74px; font-weight:400; font-size:14px; line-height:1.55; display:grid; gap:4px; border-radius:var(--r); }
@@ -303,13 +350,18 @@
       <label style="flex:1">Legal name<input id="legal" placeholder="detected from GSTR-3B" style="width:100%" /></label>
     </div>
   </section>
+  <section class="card" id="rvcard" style="display:none">
+    <h2><span class="num">4</span> Review matches</h2>
+    <p class="muted">The reconciliation, run here before anything is built. Change how documents are matched, filter by status, party or period with totals, and match or unmatch documents by hand. Your choices go into the workbook.</p>
+    <div id="rv"></div>
+  </section>
   <section class="card">
-    <h2><span class="num">4</span> Build workbook</h2>
+    <h2><span class="num">5</span> Build workbook</h2>
     <div class="row"><button id="build" disabled>Build workbook</button><span id="status" class="muted"></span></div>
     <div id="result" style="margin-top:14px"></div>
   </section>
   <section class="card" id="step4">
-    <h2><span class="num">5</span> Generate upload JSON</h2>
+    <h2><span class="num">6</span> Generate upload JSON</h2>
     <p class="muted" style="margin-top:-8px">When the workbook is reviewed: open it in Excel, save it, and drop the saved file here. The "To be Filed" columns become the GSTR-9 upload JSON.</p>
     <div id="drop2" class="dz"><b>Drop the finished workbook here</b> or click to choose</div>
     <input id="pick2" type="file" accept=".xlsx" hidden />

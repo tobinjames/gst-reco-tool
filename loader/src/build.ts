@@ -7,7 +7,11 @@ import { isPortal9, processPortal9 } from './portal9';
 import { RawRow, Warn, fyOfPeriod, fyShift, r2 } from './util';
 import { Reader, Workbook, colLetter as colLetterOf } from './xlsx';
 import { RAW_SHEETS, fingerprint, seal, sealLines, readRows } from './integrity';
-import { Manual, reconPurchases, reconSales } from './recon';
+import { DEFAULT_MATCH, KeepApart, Manual, MatchOptions, describeMatch, reconPurchases, reconSales } from './recon';
+
+/** what the user decided in the Loader's Review step: manual matches (Match codes) and documents kept apart (code X) */
+export interface Decisions { manual: Manual; keepApart: KeepApart }
+export interface ReconExtra { match?: MatchOptions; decisions?: { purchases?: Decisions; sales?: Decisions } }
 export const LOADER_VERSION = '0.4';
 
 export type Kind = 'GSTR-1' | 'GSTR-2B' | 'GSTR-3B' | 'GSTR-9 (portal)' | 'Workbook' | 'Register' | 'Unknown';
@@ -60,7 +64,7 @@ const row = (r: RawRow) => [r.key || null, ...r.amt, ...r.info];
 
 export interface BuildResult { bytes: Uint8Array; warns: Warn[]; summary: Record<string, number>; counts: Record<string, number>; recon?: any }
 
-export async function buildWorkbook(template: Uint8Array, files: InFile[], fy: string, extra: { legalName?: string; gstin?: string; sales?: any[][]; purchases?: any[][] }): Promise<BuildResult> {
+export async function buildWorkbook(template: Uint8Array, files: InFile[], fy: string, extra: { legalName?: string; gstin?: string; sales?: any[][]; purchases?: any[][] } & ReconExtra): Promise<BuildResult> {
   const warns: Warn[] = [];
   const py = fyShift(fy, -1), ny = fyShift(fy, 1);
   const base = files.find(f => f.kind === 'Workbook' && f.note !== 'ITC reconciliation workbook');
@@ -173,7 +177,8 @@ export async function buildWorkbook(template: Uint8Array, files: InFile[], fy: s
   const baseRd = base ? await Reader.open(base.bytes!) : null;
   const rawOf = async (sh: string) => written[sh] ?? (baseRd && baseRd.has(sh) ? await readRows(baseRd, sh, 6) : []);
   const booksOf = async (sh: string, given?: any[][]) => given ?? (baseRd && baseRd.has(sh) ? await readRows(baseRd, sh, 6) : []);
-  const { remarks, manual } = await readReconState(baseRd);
+  const { remarks, manual, keepApart } = await readReconState(baseRd);
+  const mo = extra.match ?? DEFAULT_MATCH;
   const recon: any = {};
   const bp = (await booksOf('Books_Purchase', extra.purchases)).filter(r => r && [12, 13, 14, 15, 16].some(i => typeof r[i] === 'number' && r[i] !== 0));
   const bs = (await booksOf('Books_Sales', extra.sales)).filter(r => r && [11, 12, 13, 14, 15].some(i => typeof r[i] === 'number' && r[i] !== 0));
@@ -181,15 +186,19 @@ export async function buildWorkbook(template: Uint8Array, files: InFile[], fy: s
   if (wb.has('Recon_Purchases')) {
     if (bp.length && raw2b.length) {
       const notes: string[] = [];
-      const pr = reconPurchases(bp, raw2b, fy, ny, remarks, manual.Recon_Purchases, notes);
+      const dp = extra.decisions?.purchases;
+      const pr = reconPurchases(bp, raw2b, fy, ny, remarks, dp?.manual ?? manual.Recon_Purchases, notes, mo, dp?.keepApart ?? keepApart.Recon_Purchases);
       notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Purchases', msg: m }));
       await wb.writeRows('Recon_Purchases', 16, pr.rows, true);
       await wb.writeRows('Recon_Suppliers', 6, pr.supRows, true);
+      await wb.setCells('Recon_Purchases', { G3: `Tax = CGST + SGST + IGST + cess. ${describeMatch(mo)}` });
       recon.purchases = pr.stats;
     } else if (bp.length || raw2b.length) warns.push({ level: 'info', file: '', msg: `Purchase reconciliation skipped: ${bp.length ? 'no GSTR-2B data' : 'no purchase register'} yet` });
     if (bs.length && raw1.length) {
       const notes: string[] = [];
-      const sr = reconSales(bs, raw1, fy, ny, remarks, manual.Recon_Sales, notes);
+      const ds = extra.decisions?.sales;
+      const sr = reconSales(bs, raw1, fy, ny, remarks, ds?.manual ?? manual.Recon_Sales, notes, mo, ds?.keepApart ?? keepApart.Recon_Sales);
+      await wb.setCells('Recon_Sales', { G3: describeMatch(mo) });
       notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Sales', msg: m }));
       await wb.writeRows('Recon_Sales', 16, sr.rows, true);
       await wb.writeRows('Recon_Sales_Monthly', 6, sr.monthly, true);
@@ -219,6 +228,7 @@ export async function buildWorkbook(template: Uint8Array, files: InFile[], fy: s
 export async function readReconState(baseRd: Reader | null) {
   const remarks = new Map<string, string>();
   const manual: Record<string, Manual> = { Recon_Purchases: new Map(), Recon_Sales: new Map() };
+  const keepApart: Record<string, KeepApart> = { Recon_Purchases: new Set(), Recon_Sales: new Set() };
   if (baseRd) for (const [sh, start, codeCol, remCol, idCol] of [['Recon_Purchases', 16, 27, 28, 29], ['Recon_Sales', 16, 21, 22, 23]] as const) {
     if (!baseRd.has(sh)) continue;
     const hdrCode = String((await baseRd.get(sh, colLetterOf(codeCol) + '15')).v ?? '');
@@ -227,7 +237,8 @@ export async function readReconState(baseRd: Reader | null) {
       const id = String(r[idCol - 1] ?? ''), code = String(r[codeCol - 1] ?? '').trim().toUpperCase(), rem = r[remCol - 1];
       if (!id) continue;
       if (rem) { remarks.set(id, String(rem)); for (const part of id.split(/[~,]/)) if (part) remarks.set(part, String(rem)); }
-      if (code) {
+      if (code === 'X') { for (const part of id.split(/[~,]/)) if (part) keepApart[sh].add(part); }
+      else if (code) {
         const g = manual[sh].get(code) ?? { b: new Set<string>(), r: new Set<string>() };
         for (const part of id.split(/[~,]/)) { if (part.startsWith('B|')) g.b.add(part); else if (part.startsWith('R|')) g.r.add(part); }
         manual[sh].set(code, g);
@@ -235,12 +246,12 @@ export async function readReconState(baseRd: Reader | null) {
     }
   }
   if (baseRd?.has('Recon_Suppliers')) { const rc = String((await baseRd.get('Recon_Suppliers', 'K5')).v ?? '') === 'Remarks' ? 10 : 11; for (const r of await readRows(baseRd, 'Recon_Suppliers', 6)) if (r[0] && r[rc]) remarks.set('S|' + r[0], String(r[rc])); }
-  return { remarks, manual };
+  return { remarks, manual, keepApart };
 }
 
 // ================================================================ monthly mode: ITC reconciliation workbook
 export interface ItcResult { bytes: Uint8Array; warns: Warn[]; recon?: any; periods: string[]; position: Record<string, number[]> }
-export async function buildItc(template: Uint8Array, files: InFile[], fy: string, extra: { legalName?: string; gstin?: string; purchases?: any[][] }): Promise<ItcResult> {
+export async function buildItc(template: Uint8Array, files: InFile[], fy: string, extra: { legalName?: string; gstin?: string; purchases?: any[][] } & ReconExtra): Promise<ItcResult> {
   const warns: Warn[] = [];
   const py = fyShift(fy, -1), ny = fyShift(fy, 1);
   const base = files.find(f => f.kind === 'Workbook' && f.note === 'ITC reconciliation workbook');
@@ -269,9 +280,11 @@ export async function buildItc(template: Uint8Array, files: InFile[], fy: string
   const position: Record<string, number[]> = {};
   let recon: any;
   if (raw2b.length && bp.length) {
-    const { remarks, manual } = await readReconState(baseRd);
+    const { remarks, manual, keepApart } = await readReconState(baseRd);
     const notes: string[] = [];
-    const pr = reconPurchases(bp, raw2b, fy, ny, remarks, manual.Recon_Purchases, notes);
+    const mo = extra.match ?? DEFAULT_MATCH, dp = extra.decisions?.purchases;
+    const pr = reconPurchases(bp, raw2b, fy, ny, remarks, dp?.manual ?? manual.Recon_Purchases, notes, mo, dp?.keepApart ?? keepApart.Recon_Purchases);
+    await wb.setCells('Recon_Purchases', { G3: `Tax = CGST + SGST + IGST + cess. ${describeMatch(mo)}` });
     notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Purchases', msg: m }));
     await wb.writeRows('Recon_Purchases', 16, pr.rows, true);
     await wb.writeRows('Recon_Suppliers', 6, pr.supRows, true);
@@ -316,4 +329,31 @@ export async function buildItc(template: Uint8Array, files: InFile[], fy: string
     C6: periods.length ? (periods.length > 3 ? `${fmtP(periods[0])} to ${fmtP(periods[periods.length - 1])} (${periods.length} months)` : periods.map(fmtP).join(', ')) : '',
     C7: fy, C9: new Date().toISOString().slice(0, 16).replace('T', ' ') });
   return { bytes: await wb.save(), warns, recon, periods, position };
+}
+
+/**
+ * Review step: run the reconciliations in the browser without writing a workbook.
+ * Uses the same raw rows as the build (new 2B / GSTR-1 files, else those in the dropped workbook) and that workbook's codes and remarks.
+ */
+export async function reconPreview(files: InFile[], fy: string, mode: 'itc' | 'annual', extra: { sales?: any[][]; purchases?: any[][] } & ReconExtra) {
+  const warns: Warn[] = [];
+  const py = fyShift(fy, -1), ny = fyShift(fy, 1);
+  const base = files.find(f => f.kind === 'Workbook' && (mode === 'itc') === (f.note === 'ITC reconciliation workbook'));
+  const baseRd = base ? await Reader.open(base.bytes!) : null;
+  const fromBase = async (sh: string) => (baseRd && baseRd.has(sh) ? await readRows(baseRd, sh, 6) : []);
+  const b2 = files.filter(f => f.kind === 'GSTR-2B').map(f => ({ name: f.name, json: f.json }));
+  const raw2b = b2.length ? process2b(b2, fy, py, ny, warns).rows.map(row) : await fromBase('RAW_2B');
+  const g1 = files.filter(f => f.kind === 'GSTR-1').map(f => ({ name: f.name, json: f.json }) as G1File);
+  const raw1 = mode === 'annual' ? (g1.length ? processGstr1(g1, fy, ny, warns).rows.map(row) : await fromBase('RAW_GSTR1')) : [];
+  const nonzero = (rows: any[][], cols: number[]) => rows.filter(r => r && cols.some(i => typeof r[i] === 'number' && r[i] !== 0));
+  const bp = nonzero(extra.purchases ?? await fromBase('Books_Purchase'), [12, 13, 14, 15, 16]);
+  const bs = mode === 'annual' ? nonzero(extra.sales ?? await fromBase('Books_Sales'), [11, 12, 13, 14, 15]) : [];
+  const { remarks, manual, keepApart } = await readReconState(baseRd);
+  const mo = extra.match ?? DEFAULT_MATCH;
+  const notes: string[] = [];
+  const out: { purchases?: ReturnType<typeof reconPurchases>; sales?: ReturnType<typeof reconSales>; notes: string[]; saved: { purchases: Decisions; sales: Decisions } } =
+    { notes, saved: { purchases: { manual: manual.Recon_Purchases, keepApart: keepApart.Recon_Purchases }, sales: { manual: manual.Recon_Sales, keepApart: keepApart.Recon_Sales } } };
+  if (bp.length && raw2b.length) { const d = extra.decisions?.purchases; out.purchases = reconPurchases(bp, raw2b, fy, ny, remarks, d?.manual ?? manual.Recon_Purchases, notes, mo, d?.keepApart ?? keepApart.Recon_Purchases); }
+  if (bs.length && raw1.length) { const d = extra.decisions?.sales; out.sales = reconSales(bs, raw1, fy, ny, remarks, d?.manual ?? manual.Recon_Sales, notes, mo, d?.keepApart ?? keepApart.Recon_Sales); }
+  return out;
 }

@@ -6,6 +6,7 @@ import { InFile, buildItc, buildWorkbook, classify } from './build';
 import { linesFromItems, parse3b } from './gstr3b';
 import { fyShift } from './util';
 import { generate9 } from './gen9';
+import { Review } from './review';
 import { applyAliases, supplierSuggestions, suppliersFrom2B } from './suppliers';
 import { FieldDef, Mapping, PURCHASE_FIELDS, RegKind, RegSheet, SALES_FIELDS, colsOf, detectHeader, guessMappingFull, isMapped, looksColumnar, normalise, readTable, unusedAmountCols } from './register';
 
@@ -162,7 +163,7 @@ $('build').onclick = async () => {
     const fy = $('fy').value;
     if (mode === 'itc') { await buildItcNow(fy); $('build').disabled = false; return; }
     const tpl = new Uint8Array(await (await fetch(templateUrl)).arrayBuffer());
-    const res = await buildWorkbook(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), ...registerRows(fy) });
+    const res = await buildWorkbook(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), ...registerRows(fy), ...review.extra() });
     const name = `GSTR9_${($('gstin').value || 'client').trim()}_${fy}.xlsx`;
     const url = URL.createObjectURL(new Blob([res.bytes as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
     const a = document.createElement('a'); a.href = url; a.download = name; a.click();
@@ -346,6 +347,7 @@ function renderSuppliers() {
   const card = $('supcard'), box = $('sups');
   const b2 = files.filter(f => f.kind === 'GSTR-2B');
   const pur = b2.length ? registerRows($('fy').value, true).purchases : undefined;
+  queueMicrotask(() => review.refresh()); // after module init (review is declared further down)
   const sup2b = b2.length ? suppliersFrom2B(b2.map(f => f.json)) : new Map();
   const sug = pur ? supplierSuggestions(pur, sup2b) : [];
   const allSup = [...sup2b.values()].sort((a, b) => (a.name || a.gstin).localeCompare(b.name || b.gstin));
@@ -386,6 +388,14 @@ function renderSuppliers() {
   if (all) all.onclick = () => { const a = aliasStore(); for (const x of strongPending) a[x.key] = pickOf(x.key); store.set(ALIAS_KEY, a); renderSuppliers(); };
 }
 
+// ---------- review matches (step 4): runs the reconciliation in the page; settings and manual decisions go into the build
+const review = new Review($('rvcard'), $('rv'), () => {
+  if (!files.length) return null;
+  let regs: any;
+  try { regs = registerRows($('fy').value); } catch (e: any) { regs = e.message; }
+  return { files, fy: $('fy').value, mode, regs };
+});
+
 
 
 // ---------- monthly mode build
@@ -393,7 +403,7 @@ async function buildItcNow(fy: string) {
   try {
     const tpl = new Uint8Array(await (await fetch(itcTemplateUrl)).arrayBuffer());
     const regs = registerRows(fy);
-    const res = await buildItc(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), purchases: regs.purchases });
+    const res = await buildItc(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), purchases: regs.purchases, ...review.extra() });
     const p = res.periods;
     const label = !p.length ? fy : p.length === 1 ? p[0] : `${p[0]}-${p[p.length - 1]}`;
     const name = `ITC_Recon_${($('gstin').value || 'client').trim()}_${label}.xlsx`;
