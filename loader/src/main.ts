@@ -6,12 +6,18 @@ import { InFile, buildItc, buildWorkbook, classify } from './build';
 import { linesFromItems, parse3b } from './gstr3b';
 import { fyShift } from './util';
 import { generate9 } from './gen9';
-import { FieldDef, PURCHASE_FIELDS, RegKind, RegSheet, SALES_FIELDS, detectHeader, guessMapping, normalise, readTable } from './register';
+import { Review } from './review';
+import { applyAliases, supplierSuggestions, suppliersFrom2B } from './suppliers';
+import { FieldDef, Mapping, PURCHASE_FIELDS, RegKind, RegSheet, SALES_FIELDS, colsOf, detectHeader, guessMappingFull, isMapped, looksColumnar, normalise, readTable, unusedAmountCols } from './register';
 
 // run pdf.js in the page itself (no separate worker file) so the tool works when opened straight from disk
 (globalThis as any).pdfjsWorker = pdfWorker;
 
 const $ = (id: string) => document.getElementById(id)! as any;
+// "where do I get these files" guide: tabs
+document.querySelectorAll('button.gtab').forEach((b: any) => (b.onclick = () => {
+  document.querySelectorAll('.gtab, .gpane').forEach((x: any) => x.classList.toggle('on', x.dataset.g === b.dataset.g));
+}));
 let files: InFile[] = [];
 type Mode = 'itc' | 'annual';
 let mode: Mode = (() => { try { return (localStorage.getItem('jjmode') as Mode) || 'annual'; } catch { return 'annual'; } })();
@@ -157,7 +163,7 @@ $('build').onclick = async () => {
     const fy = $('fy').value;
     if (mode === 'itc') { await buildItcNow(fy); $('build').disabled = false; return; }
     const tpl = new Uint8Array(await (await fetch(templateUrl)).arrayBuffer());
-    const res = await buildWorkbook(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), ...registerRows(fy) });
+    const res = await buildWorkbook(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), ...registerRows(fy), ...review.extra() });
     const name = `GSTR9_${($('gstin').value || 'client').trim()}_${fy}.xlsx`;
     const url = URL.createObjectURL(new Blob([res.bytes as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
     const a = document.createElement('a'); a.href = url; a.download = name; a.click();
@@ -227,7 +233,7 @@ async function gen(file: File) {
 
 
 // ---------- registers: column mapping
-interface RegState { sheets: RegSheet[]; sheet: number; header: number; kind: RegKind; map: Record<string, number>; d: Record<string, string> }
+interface RegState { sheets: RegSheet[]; sheet: number; header: number; kind: RegKind; map: Mapping; d: Record<string, string> }
 const regState = new Map<InFile, RegState>();
 const fieldsOf = (k: RegKind): FieldDef[] => k === 'sales' ? SALES_FIELDS : PURCHASE_FIELDS;
 const store = { get(k: string) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k: string, v: any) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } } };
@@ -237,18 +243,18 @@ async function initReg(f: InFile) {
   const sheets = await readTable(f.name, f.bytes!);
   // pick the sheet and kind that look most like a register
   let best = 0, bestScore = -1, kind: RegKind = /purch|bill|vendor|supplier|expense|inward/i.test(f.name) ? 'purchases' : 'sales';
-  sheets.forEach((sh, i) => { const h = detectHeader(sh.rows, fieldsOf(kind)); const sc = Object.keys(guessMapping(sh.rows[h] || [], fieldsOf(kind))).length; if (sc > bestScore) { bestScore = sc; best = i; } });
+  sheets.forEach((sh, i) => { const h = detectHeader(sh.rows, fieldsOf(kind)); const sc = Object.keys(guessMappingFull(sh.rows, h, fieldsOf(kind))).length; if (sc > bestScore) { bestScore = sc; best = i; } });
   const sh = sheets[best];
   const header = detectHeader(sh.rows, fieldsOf(kind));
   const hdrTxt = (sh.rows[header] || []).join(' ').toLowerCase();
   if (/supplier|vendor|bill/.test(hdrTxt) && !/customer/.test(hdrTxt)) kind = 'purchases';
   const st: RegState = { sheets, sheet: best, header, kind, map: {}, d: {} };
-  st.map = store.get(sigOf(st)) || guessMapping(sh.rows[header] || [], fieldsOf(kind));
+  st.map = store.get(sigOf(st)) || guessMappingFull(sh.rows, header, fieldsOf(kind));
   regState.set(f, st);
 }
-function remap(st: RegState) { st.map = store.get(sigOf(st)) || guessMapping(st.sheets[st.sheet].rows[st.header] || [], fieldsOf(st.kind)); }
+function remap(st: RegState) { st.map = store.get(sigOf(st)) || guessMappingFull(st.sheets[st.sheet].rows, st.header, fieldsOf(st.kind)); }
 const defaults = (st: RegState) => ({ noGstinZeroTax: st.d.noGstinZeroTax || 'EXEMPT', itcType: st.d.itcType || 'Inputs', status: st.d.status || 'Availed',
-  claimFy: st.d.claimFy || $('fy').value, purNoGstin: st.d.purNoGstin || (st.map.gstin >= 0 ? 'RCM-UNREG' : 'B2B') });
+  claimFy: st.d.claimFy || $('fy').value, purNoGstin: st.d.purNoGstin || (isMapped(st.map.gstin) ? 'RCM-UNREG' : 'B2B') });
 
 function renderRegisters() {
   const regs = files.filter(f => f.kind === 'Register');
@@ -263,19 +269,32 @@ function renderRegisters() {
     const sh = st.sheets[st.sheet], hdr = sh.rows[st.header] || [];
     const isDateCol = (i: number) => /date|dt\b/i.test(String(hdr[i] ?? ''));
     const sample = (i: number) => { for (const r of sh.rows.slice(st.header + 1, st.header + 30)) { const v = r?.[i]; if (v !== null && v !== undefined && v !== '') return (typeof v === 'number' && isDateCol(i) && v > 20000 && v < 80000 ? new Date(Date.UTC(1899, 11, 30) + v * 86400000).toISOString().slice(0, 10).split('-').reverse().join('-') : String(v)).slice(0, 18); } return ''; };
-    const colOpts = (sel: number | undefined) => `<option value="-1">— not in register —</option>` + hdr.map((h, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${esc(h ?? `Column ${i + 1}`)}${sample(i) ? ' · e.g. ' + esc(sample(i)) : ''}</option>`).join('');
+    const colName = (i: number) => esc(hdr[i] ?? `Column ${i + 1}`);
+    const colOpts = (sel: number | undefined, first = '— not in register —', skip: number[] = []) => `<option value="-1">${first}</option>` + hdr.map((h, i) => skip.includes(i) ? '' : `<option value="${i}" ${sel === i ? 'selected' : ''}>${esc(h ?? `Column ${i + 1}`)}${sample(i) ? ' · e.g. ' + esc(sample(i)) : ''}</option>`).join('');
+    /** amount fields can take several columns (Tally columnar: one column per ledger), summed per row */
+    const fieldCtl = (x: FieldDef) => {
+      const cols = colsOf(st.map[x.id]);
+      if (!x.multi || cols.length < 2) return `<select data-f="${x.id}">${colOpts(cols[0])}</select>` + (x.multi && cols.length ? `<select data-add="${x.id}" class="addcol">${colOpts(undefined, '+ add another column (summed)', cols)}</select>` : '');
+      return `<div class="chips">${cols.map(j => `<span class="chip">${colName(j)}<button class="link" data-rm="${x.id}:${j}" title="remove">×</button></span>`).join('')}</div>
+        <select data-add="${x.id}" class="addcol">${colOpts(undefined, `+ add column (sum of ${cols.length})`, cols)}</select>`;
+    };
     const fields = fieldsOf(st.kind);
     const dsel = (key: string, label: string, opts: string[], cur: string) => `<label>${label}<select data-d="${key}">${opts.map(o => `<option ${o === cur ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`;
     const dd = defaults(st);
-    const missing = fields.filter(x => x.required && !(st.map[x.id] >= 0));
+    const missing = fields.filter(x => x.required && !isMapped(st.map[x.id]));
+    const columnar = looksColumnar(hdr) || fields.some(x => x.multi && colsOf(st.map[x.id]).length > 1);
     let prevHtml = '';
     if (!missing.length) {
       const n = normalise(st.kind, sh.rows, st.header, st.map, dd, $('fy').value);
+      const unused = columnar ? unusedAmountCols(sh.rows, st.header, st.map) : [];
       const cols = st.kind === 'sales' ? ['Date', 'No.', 'Customer', 'GSTIN', 'POS', 'Supply type', 'Doc', 'HSN', 'UQC', 'Qty', 'Rate', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess']
         : ['Date', 'No.', 'Supplier', 'GSTIN', 'Supply type', 'ITC type', 'ITC status', 'Claimed FY', 'HSN', 'UQC', 'Qty', 'Rate', 'Taxable', 'CGST', 'SGST', 'IGST', 'Cess'];
       const fmt = (v: any, i: number) => i === 0 && typeof v === 'number' ? new Date(Date.UTC(1899, 11, 30) + v * 86400000).toISOString().slice(0, 10).split('-').reverse().join('-') : (v ?? '');
       prevHtml = `<p style="margin:6px 0">${n.stats.lines} lines → ${n.stats.docs} documents${n.stats.credit ? ` · ${n.stats.credit} credit-note lines` : ''}${n.stats.skipped ? ` · ${n.stats.skipped} rows skipped (no number / no amount / totals)` : ''}
+        ${n.stats.grossOff ? ` · <span class="warn-error">${n.stats.grossOff} documents where taxable + tax (+ round off) ≠ gross total, e.g. ${n.stats.grossOffEg.map(esc).join(', ')}: a ledger column is probably missing or mapped twice</span>` : ''}
         ${n.stats.badDates ? ` · <span class="warn-error">${n.stats.badDates} unreadable dates</span>` : ''}${n.stats.outsideFy ? ` · <span class="warn-warn">${n.stats.outsideFy} lines dated outside FY ${esc($('fy').value)}</span>` : ''}</p>
+        <p class="muted" style="margin:4px 0">Totals: ${(st.kind === 'sales' ? [['Taxable', 11], ['CGST', 12], ['SGST', 13], ['IGST', 14], ['Cess', 15]] : [['Taxable', 12], ['CGST', 13], ['SGST', 14], ['IGST', 15], ['Cess', 16]] as [string, number][]).map(([l, j]) => `${l} <b>${fmtN(n.rows.reduce((a, r) => a + (+r[j as number] || 0), 0))}</b>`).join(' · ')}</p>
+        ${unused.length ? `<p class="warn-warn" style="margin:6px 0">Amount columns not used: ${unused.map(colName).join(', ')}. If any is a purchase / expense or tax ledger, add it to Taxable value or the tax head.</p>` : ''}
         <div class="prev"><table><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>${n.rows.slice(0, 5).map(r => `<tr>${cols.map((_, i) => `<td>${esc(fmt(r[i], i))}</td>`).join('')}</tr>`).join('')}</table></div>`;
     } else prevHtml = `<p class="warn-error">Map the required fields: ${missing.map(m => esc(m.label)).join(', ')}</p>`;
     div.innerHTML = `<h3>${esc(f.name)}</h3>
@@ -284,33 +303,99 @@ function renderRegisters() {
         ${st.sheets.length > 1 ? `<label>Sheet<select data-k="sheet">${st.sheets.map((x, i) => `<option value="${i}" ${i === st.sheet ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : ''}
         <label>Header row<input data-k="header" type="number" min="1" value="${st.header + 1}" style="min-width:0;width:90px"/></label>
       </div>
-      <div class="mapgrid">${fields.map(x => `<label>${esc(x.label)}${x.required ? ' <span class="req">*</span>' : ''}<select data-f="${x.id}">${colOpts(st.map[x.id])}</select></label>`).join('')}</div>
+      ${columnar ? `<p class="callout">This looks like a <b>Tally columnar register</b> (one column per ledger). Taxable value is the sum of the purchase / sales / expense ledger columns picked below, and each tax head is the sum of its tax-ledger columns. Check that every ledger is included and that Gross Total, Round Off and TDS are not.</p>` : ''}
+      <div class="mapgrid">${fields.map(x => `<label><span>${esc(x.label)}${x.required ? ' <span class="req">*</span>' : ''}</span>${fieldCtl(x)}</label>`).join('')}</div>
       <div class="row">${st.kind === 'sales'
         ? dsel('noGstinZeroTax', 'No-GSTIN rows with no tax are', ['EXEMPT', 'NIL', 'NON-GST', 'EXP-WOP'], dd.noGstinZeroTax)
         : dsel('itcType', 'Default ITC type', ['Inputs', 'Input Services', 'Capital Goods'], dd.itcType) + dsel('status', 'Default ITC status', ['Availed', 'Not availed'], dd.status)
           + dsel('claimFy', 'ITC claimed in (default)', [$('fy').value, fyShift($('fy').value, 1)], dd.claimFy) + dsel('purNoGstin', 'Rows without supplier GSTIN are', ['RCM-UNREG', 'IMPS', 'IMPG', 'B2B'], dd.purNoGstin)}</div>
-      ${st.kind === 'purchases' && !(st.map.gstin >= 0) ? '<p class="warn-warn" style="margin:8px 0 0">No supplier GSTIN column: the GSTIN will be taken from GSTR-2B by supplier name (or invoice no. + amount) when reconciling. Map the GSTIN column if the register has one.</p>' : ''}
+      ${st.kind === 'purchases' && !isMapped(st.map.gstin) ? '<p class="warn-warn" style="margin:8px 0 0">No supplier GSTIN column: the GSTIN will be taken from GSTR-2B by supplier name (or invoice no. + amount) when reconciling. Map the GSTIN column if the register has one.</p>' : ''}
       <p class="muted" style="margin:8px 0 0">Supply type is taken from the mapped column when present; otherwise rows with a valid GSTIN are B2B and the rest follow the defaults. You can still correct individual lines in the workbook's Books sheets.</p>
       ${prevHtml}`;
-    div.querySelectorAll('select[data-f]').forEach((el: any) => el.onchange = () => { st.map[el.dataset.f] = +el.value; store.set(sigOf(st), st.map); renderRegisters(); });
+    const save = () => { store.set(sigOf(st), st.map); renderRegisters(); };
+    div.querySelectorAll('select[data-f]').forEach((el: any) => el.onchange = () => { st.map[el.dataset.f] = +el.value; save(); });
+    div.querySelectorAll('select[data-add]').forEach((el: any) => el.onchange = () => { const id = el.dataset.add, j = +el.value; if (j >= 0) { st.map[id] = [...new Set([...colsOf(st.map[id]), j])]; save(); } });
+    div.querySelectorAll('button[data-rm]').forEach((el: any) => el.onclick = () => { const [id, j] = el.dataset.rm.split(':'); const left = colsOf(st.map[id]).filter(c => c !== +j); st.map[id] = left.length === 1 ? left[0] : left.length ? left : -1; save(); });
     div.querySelectorAll('select[data-d]').forEach((el: any) => el.onchange = () => { st.d[el.dataset.d] = el.value; renderRegisters(); });
     (div.querySelector('select[data-k="kind"]') as any).onchange = (e: any) => { st.kind = e.target.value; st.header = detectHeader(st.sheets[st.sheet].rows, fieldsOf(st.kind)); remap(st); renderRegisters(); };
     const shSel = div.querySelector('select[data-k="sheet"]') as any;
     if (shSel) shSel.onchange = (e: any) => { st.sheet = +e.target.value; st.header = detectHeader(st.sheets[st.sheet].rows, fieldsOf(st.kind)); remap(st); renderRegisters(); };
     (div.querySelector('input[data-k="header"]') as any).onchange = (e: any) => { st.header = Math.max(0, +e.target.value - 1); remap(st); renderRegisters(); };
   }
+  renderSuppliers();
 }
 /** normalised register rows per kind, for the build */
-function registerRows(fy: string) {
+function registerRows(fy: string, lenient = false) {
   const out: { sales?: any[][]; purchases?: any[][] } = {};
   for (const f of files.filter(x => x.kind === 'Register')) {
     const st = regState.get(f); if (!st) continue;
-    if (fieldsOf(st.kind).some(x => x.required && !(st.map[x.id] >= 0))) throw new Error(`${f.name}: map the required columns first`);
+    if (fieldsOf(st.kind).some(x => x.required && !isMapped(st.map[x.id]))) { if (lenient) continue; throw new Error(`${f.name}: map the required columns first`); }
     const n = normalise(st.kind, st.sheets[st.sheet].rows, st.header, st.map, defaults(st), fy);
     (out[st.kind] ||= []).push(...n.rows);
   }
+  // supplier names the user confirmed against 2B → their GSTIN
+  if (out.purchases && !lenient) applyAliases(out.purchases, confirmedAliases());
   return out;
 }
+
+// ---------- supplier names: books rows without GSTIN, matched to 2B suppliers by approximate name, confirmed by the user
+const ALIAS_KEY = 'jjalias';
+const aliasStore = (): Record<string, string> => store.get(ALIAS_KEY) || {};
+const confirmedAliases = () => new Map(Object.entries(aliasStore()).filter(([, g]) => g));
+const supPick = new Map<string, string>(); // name key → GSTIN chosen in the dropdown (not yet confirmed)
+function renderSuppliers() {
+  const card = $('supcard'), box = $('sups');
+  const b2 = files.filter(f => f.kind === 'GSTR-2B');
+  const pur = b2.length ? registerRows($('fy').value, true).purchases : undefined;
+  queueMicrotask(() => review.refresh()); // after module init (review is declared further down)
+  const sup2b = b2.length ? suppliersFrom2B(b2.map(f => f.json)) : new Map();
+  const sug = pur ? supplierSuggestions(pur, sup2b) : [];
+  const allSup = [...sup2b.values()].sort((a, b) => (a.name || a.gstin).localeCompare(b.name || b.gstin));
+  const exact = sug.filter(x => x.exact), approx = sug.filter(x => !x.exact);
+  card.style.display = sug.length ? '' : 'none';
+  if (!sug.length) { box.innerHTML = ''; return; }
+  const al = aliasStore();
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  const rowsHtml = approx.map(x => {
+    const conf = al[x.key];
+    const cur = conf || supPick.get(x.key) || (x.cands[0]?.gstin || '');
+    const strong = x.cands[0] && (x.cands[0].invHits > 0 || x.cands[0].score >= 0.9);
+    const candSet = new Set(x.cands.map(c => c.gstin));
+    // suggestions first, then every other 2B supplier so the user can pair names the system did not suggest
+    const opts = (x.cands.length ? '' : `<option value="" ${cur ? '' : 'selected'}>— pick the supplier in 2B —</option>`)
+      + (x.cands.length ? `<optgroup label="Suggested">${x.cands.map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(c.name || c.gstin)} · ${c.gstin} · ${pct(c.score)}${c.invHits ? ` · ${c.invHits} invoice no. match` : ''}</option>`).join('')}</optgroup>` : '')
+      + `<optgroup label="All suppliers in 2B">${allSup.filter(c => !candSet.has(c.gstin)).map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(c.name || c.gstin)} · ${c.gstin}</option>`).join('')}</optgroup>`;
+    const state = conf ? `<span class="tag ok-tag">Confirmed</span> <button class="link" data-undo="${esc(x.key)}">undo</button>`
+      : conf === '' ? `<span class="tag no-tag">No match</span> <button class="link" data-undo="${esc(x.key)}">undo</button>`
+      : `<button class="small" data-ok="${esc(x.key)}">Confirm</button> <button class="link" data-no="${esc(x.key)}">${x.cands.length ? 'Not this supplier' : 'Not in 2B'}</button>`;
+    return `<tr class="${conf ? 'confirmed' : ''}"><td><b>${esc(x.name)}</b><div class="muted">${x.docs} invoice(s) · ITC ${fmtN(x.tax)}</div></td>
+      <td><select data-pick="${esc(x.key)}" ${conf !== undefined ? 'disabled' : ''}>${opts}</select>${strong && conf === undefined ? '<div class="ok-text" style="font-size:12px">Strong match</div>' : !x.cands.length && conf === undefined ? '<div class="muted" style="font-size:12px">No similar name found: pick the supplier yourself if it is in 2B</div>' : ''}</td><td class="act">${state}</td></tr>`;
+  }).join('');
+  const pending = approx.filter(x => al[x.key] === undefined && x.cands.length);
+  const unsuggested = approx.filter(x => !x.cands.length).length;
+  const strongPending = pending.filter(x => x.cands[0].invHits > 0 || x.cands[0].score >= 0.9);
+  box.innerHTML = `${exact.length ? `<p class="ok-text" style="margin:0 0 10px">${exact.length} supplier name(s) match a 2B supplier exactly and get its GSTIN automatically.</p>` : ''}
+    ${approx.length ? `<div class="row" style="justify-content:space-between;margin-bottom:10px"><span class="muted">${approx.length} supplier name(s) without a GSTIN don't exactly match a name in 2B${unsuggested ? ` (${unsuggested} with no similar name)` : ''}. Pick the right supplier (suggestions first, or any supplier in 2B) and confirm. Confirmed names are remembered for next time.</span>
+      ${strongPending.length ? `<button class="small" id="supAllStrong">Confirm ${strongPending.length} strong match(es)</button>` : ''}</div>
+      <div class="tablewrap"><table class="sup"><tr><th>Name in books</th><th>Supplier in GSTR-2B</th><th></th></tr>${rowsHtml}</table></div>` : ''}`;
+  const setAlias = (k: string, g: string | null) => { const a = aliasStore(); if (g === null) delete a[k]; else a[k] = g; store.set(ALIAS_KEY, a); renderSuppliers(); };
+  const pickOf = (k: string) => supPick.get(k) ?? approx.find(x => x.key === k)?.cands[0]?.gstin ?? '';
+  box.querySelectorAll('select[data-pick]').forEach((el: any) => (el.onchange = () => supPick.set(el.dataset.pick, el.value)));
+  box.querySelectorAll('button[data-ok]').forEach((el: any) => (el.onclick = () => { const g = pickOf(el.dataset.ok); if (g) setAlias(el.dataset.ok, g); }));
+  box.querySelectorAll('button[data-no]').forEach((el: any) => (el.onclick = () => setAlias(el.dataset.no, '')));
+  box.querySelectorAll('button[data-undo]').forEach((el: any) => (el.onclick = () => setAlias(el.dataset.undo, null)));
+  const all = box.querySelector('#supAllStrong') as any;
+  if (all) all.onclick = () => { const a = aliasStore(); for (const x of strongPending) a[x.key] = pickOf(x.key); store.set(ALIAS_KEY, a); renderSuppliers(); };
+}
+
+// ---------- review matches (step 4): runs the reconciliation in the page; settings and manual decisions go into the build
+const review = new Review($('rvcard'), $('rv'), () => {
+  if (!files.length) return null;
+  let regs: any;
+  try { regs = registerRows($('fy').value); } catch (e: any) { regs = e.message; }
+  return { files, fy: $('fy').value, mode, regs };
+});
+
 
 
 // ---------- monthly mode build
@@ -318,7 +403,7 @@ async function buildItcNow(fy: string) {
   try {
     const tpl = new Uint8Array(await (await fetch(itcTemplateUrl)).arrayBuffer());
     const regs = registerRows(fy);
-    const res = await buildItc(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), purchases: regs.purchases });
+    const res = await buildItc(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), purchases: regs.purchases, ...review.extra() });
     const p = res.periods;
     const label = !p.length ? fy : p.length === 1 ? p[0] : `${p[0]}-${p[p.length - 1]}`;
     const name = `ITC_Recon_${($('gstin').value || 'client').trim()}_${label}.xlsx`;

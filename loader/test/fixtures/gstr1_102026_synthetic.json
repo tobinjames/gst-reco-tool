@@ -1,0 +1,5 @@
+{"gstin":"27AAACD0000A1Z9","fp":"102026","b2b":[
+ {"ctin":"27AAACX1111B1Z5","inv":[{"inum":"DM/26-27/101","idt":"02-10-2026","val":11800,"pos":"27","rchrg":"N","inv_typ":"R","itms":[{"num":1,"itm_det":{"txval":10000,"rt":18,"iamt":0,"camt":900,"samt":900,"csamt":0}}]}]},
+ {"ctin":"29AAACY2222C1Z7","inv":[{"inum":"DM/26-27/102","idt":"05-10-2026","val":23600,"pos":"29","rchrg":"N","inv_typ":"R","itms":[{"num":1,"itm_det":{"txval":20000,"rt":18,"iamt":3600,"camt":0,"samt":0,"csamt":0}}]}]},
+ {"ctin":"27AAACZ3333D1Z9","inv":[{"inum":"DM/26-27/105","idt":"09-10-2026","val":5900,"pos":"27","rchrg":"N","inv_typ":"R","itms":[{"num":1,"itm_det":{"txval":5000,"rt":18,"iamt":0,"camt":450,"samt":450,"csamt":0}}]}]}
+]}
