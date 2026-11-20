@@ -8,23 +8,26 @@ export interface CellObj { v?: string | number | null; f?: string; s?: Style }
 export type C = string | number | null | undefined | CellObj;
 export interface SheetSpec { name: string; rows: C[][]; widths?: number[]; freeze?: { row: number; col?: number }; filter?: { row: number; cols: number }; tab?: string }
 
-const xmlEsc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+const xmlEsc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
 export const col = (i: number) => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
 /** dd-mm-yyyy → Excel date serial */
 export const serial = (d: string) => { const m = d.match(/^(\d{2})-(\d{2})-(\d{4})$/); return m ? Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1]) - Date.UTC(1899, 11, 30)) / 86400000) : null; };
 
+/** Excel refuses (and "repairs") a cell with more than 32,767 characters */
+const MAX_CELL = 32000;
+const fit = (t: string) => (t.length > MAX_CELL ? t.slice(0, MAX_CELL - 40) + ' … (cut: too long for one Excel cell)' : t);
 function cellXml(ref: string, c: C) {
   const o: CellObj = c !== null && typeof c === 'object' ? c : { v: c as any };
   const s = o.s ? ` s="${STYLE_ID[o.s]}"` : typeof o.v === 'number' && !o.f ? ` s="${STYLE_ID.num}"` : '';
   if (o.f) {
     const f = `<f>${xmlEsc(o.f.replace(/^=/, ''))}</f>`;
     if (typeof o.v === 'number' && isFinite(o.v)) return `<c r="${ref}"${s || ` s="${STYLE_ID.num}"`}>${f}<v>${o.v}</v></c>`;
-    if (typeof o.v === 'string') return `<c r="${ref}"${s} t="str">${f}<v>${xmlEsc(o.v)}</v></c>`;
+    if (typeof o.v === 'string') return `<c r="${ref}"${s} t="str">${f}<v>${xmlEsc(fit(o.v))}</v></c>`;
     return `<c r="${ref}"${s}>${f}</c>`;
   }
   if (o.v === null || o.v === undefined || o.v === '') return o.s ? `<c r="${ref}"${s}/>` : '';
   if (typeof o.v === 'number' && isFinite(o.v)) return `<c r="${ref}"${s}><v>${o.v}</v></c>`;
-  return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xmlEsc(o.v)}</t></is></c>`;
+  return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xmlEsc(fit(String(o.v)))}</t></is></c>`;
 }
 
 function sheetXml(sh: SheetSpec) {

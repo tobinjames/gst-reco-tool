@@ -104,13 +104,15 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   const IH = (h: HeadK) => col(7 + HEAD_KEYS.indexOf(h)); // H..L
   const items: C[][] = [...title('Reconciling items: books to portal'), hdr(['No.', 'Ledger', 'Effect on closing', 'Status', 'What happened', 'Return period(s)', 'Vouchers', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'Amount involved (no effect on closing)', 'Action', 'Flow row(s)', 'Books lines', 'Portal lines'])];
   const evRow = new Map<string, number>();
+  // long lists of line references: the first 200, the rest are found by filtering the line sheet on this item's No.
+  const refList = (ids: (string | undefined)[], sheet: string) => { const u = [...new Set(ids.filter(Boolean))] as string[]; return u.length > 200 ? `${u.slice(0, 200).join(', ')} … and ${u.length - 200} more: filter ${sheet} on the Reconciling items column` : u.join(', '); };
   const evLine = (ev: typeof rc.events[number]) => {
     const row = items.length + 1; evRow.set(ev.id, row);
     const adj = (h: HeadK) => (ev.affects ? N(-ev.effect[h]) : 0);
     items.push([ev.id, ledgerLabel(ev.block), ev.affects ? 'Yes' : 'No', ev.explained ? 'Explained' : 'Unexplained', { v: ev.what, s: 'wrap' }, ev.months.map(ymLabel).join(', '), { v: ev.vouchers, s: 'wrap' },
       ...HEAD_KEYS.map(h => (Math.abs(adj(h)) > 0.004 ? adj(h) : null)), { f: `SUM(H${row}:L${row})`, v: N(HEAD_KEYS.reduce((t, h) => t + adj(h), 0)) },
       ev.affects ? null : ev.involved || null, { v: ev.action, s: 'wrap' }, ev.rows.join(', '),
-      { v: [...new Set(ev.books.map(id => bref.get(id)).filter(Boolean))].join(', '), s: 'wrap' }, { v: [...new Set(ev.portal.map(id => pref.get(id)).filter(Boolean))].join(', '), s: 'wrap' }]);
+      { v: refList(ev.books.map(id => bref.get(id)), 'Books_Lines'), s: 'wrap' }, { v: refList(ev.portal.map(id => pref.get(id)), 'Portal_Lines'), s: 'wrap' }]);
   };
   rc.events.filter(e => e.affects).forEach(evLine);
   const ne = rc.events.filter(e => !e.affects);
