@@ -5,7 +5,12 @@ import { fyOfDate } from './util';
 
 export type RegKind = 'sales' | 'purchases';
 export interface RegSheet { name: string; rows: any[][] }
-export interface FieldDef { id: string; label: string; required?: boolean; syn: string[] }
+export interface FieldDef { id: string; label: string; required?: boolean; multi?: boolean; syn: string[] }
+/** column mapping: field id → column index, or several column indexes that are summed (Tally columnar registers) */
+export type Mapping = Record<string, number | number[]>;
+/** the columns a mapping entry points to (always an array; empty when not mapped) */
+export const colsOf = (v: number | number[] | undefined | null): number[] => (Array.isArray(v) ? v.filter(x => x >= 0) : typeof v === 'number' && v >= 0 ? [v] : []);
+export const isMapped = (v: number | number[] | undefined | null) => colsOf(v).length > 0;
 
 export const SALES_FIELDS: FieldDef[] = [
   { id: 'date', label: 'Invoice date', required: true, syn: ['invoice date', 'inv date', 'date', 'posting date', 'bill date', 'voucher date', 'document date'] },
@@ -19,11 +24,12 @@ export const SALES_FIELDS: FieldDef[] = [
   { id: 'uqc', label: 'UQC / unit', syn: ['uqc', 'unit', 'uom', 'usage unit'] },
   { id: 'qty', label: 'Quantity', syn: ['quantity', 'qty'] },
   { id: 'rate', label: 'GST rate %', syn: ['gst rate', 'tax rate', 'rate', 'item tax %', 'gst %', 'tax %', 'rate of tax'] },
-  { id: 'taxable', label: 'Taxable value', required: true, syn: ['taxable value', 'taxable amount', 'assessable value', 'item total', 'subtotal', 'sub total', 'net amount', 'amount before tax', 'value'] },
-  { id: 'cgst', label: 'CGST', syn: ['cgst', 'central tax', 'central tax amount', 'cgst amount'] },
-  { id: 'sgst', label: 'SGST / UTGST', syn: ['sgst', 'state tax', 'state tax amount', 'sgst amount', 'utgst', 'state/ut tax'] },
-  { id: 'igst', label: 'IGST', syn: ['igst', 'integrated tax', 'integrated tax amount', 'igst amount'] },
-  { id: 'cess', label: 'Cess', syn: ['cess', 'cess amount', 'compensation cess'] },
+  { id: 'taxable', multi: true, label: 'Taxable value', required: true, syn: ['taxable value', 'taxable amount', 'assessable value', 'item total', 'subtotal', 'sub total', 'net amount', 'amount before tax', 'value'] },
+  { id: 'cgst', multi: true, label: 'CGST', syn: ['cgst', 'central tax', 'central tax amount', 'cgst amount'] },
+  { id: 'sgst', multi: true, label: 'SGST / UTGST', syn: ['sgst', 'state tax', 'state tax amount', 'sgst amount', 'utgst', 'state/ut tax'] },
+  { id: 'igst', multi: true, label: 'IGST', syn: ['igst', 'integrated tax', 'integrated tax amount', 'igst amount'] },
+  { id: 'cess', multi: true, label: 'Cess', syn: ['cess', 'cess amount', 'compensation cess'] },
+  { id: 'gross', label: 'Gross / invoice total (check only)', syn: ['gross total', 'invoice value', 'invoice amount', 'bill amount'] },
 ];
 export const PURCHASE_FIELDS: FieldDef[] = [
   { id: 'date', label: 'Invoice date (supplier)', required: true, syn: ['supplier invoice date', 'bill date', 'invoice date', 'date', 'posting date', 'voucher date', 'document date'] },
@@ -38,11 +44,12 @@ export const PURCHASE_FIELDS: FieldDef[] = [
   { id: 'uqc', label: 'UQC / unit', syn: ['uqc', 'unit', 'uom', 'usage unit'] },
   { id: 'qty', label: 'Quantity', syn: ['quantity', 'qty'] },
   { id: 'rate', label: 'GST rate %', syn: ['gst rate', 'tax rate', 'rate', 'item tax %', 'gst %', 'tax %'] },
-  { id: 'taxable', label: 'Taxable value', required: true, syn: ['taxable value', 'taxable amount', 'assessable value', 'item total', 'subtotal', 'sub total', 'net amount', 'value'] },
-  { id: 'cgst', label: 'CGST', syn: ['cgst', 'central tax', 'central tax amount', 'cgst amount'] },
-  { id: 'sgst', label: 'SGST / UTGST', syn: ['sgst', 'state tax', 'state tax amount', 'sgst amount', 'utgst', 'state/ut tax'] },
-  { id: 'igst', label: 'IGST', syn: ['igst', 'integrated tax', 'integrated tax amount', 'igst amount'] },
-  { id: 'cess', label: 'Cess', syn: ['cess', 'cess amount', 'compensation cess'] },
+  { id: 'taxable', multi: true, label: 'Taxable value', required: true, syn: ['taxable value', 'taxable amount', 'assessable value', 'item total', 'subtotal', 'sub total', 'net amount', 'value'] },
+  { id: 'cgst', multi: true, label: 'CGST', syn: ['cgst', 'central tax', 'central tax amount', 'cgst amount'] },
+  { id: 'sgst', multi: true, label: 'SGST / UTGST', syn: ['sgst', 'state tax', 'state tax amount', 'sgst amount', 'utgst', 'state/ut tax'] },
+  { id: 'igst', multi: true, label: 'IGST', syn: ['igst', 'integrated tax', 'integrated tax amount', 'igst amount'] },
+  { id: 'cess', multi: true, label: 'Cess', syn: ['cess', 'cess amount', 'compensation cess'] },
+  { id: 'gross', label: 'Gross / invoice total (check only)', syn: ['gross total', 'invoice value', 'invoice amount', 'bill amount'] },
 ];
 
 /** read every sheet of an .xlsx, or a .csv */
@@ -95,6 +102,58 @@ export function guessMapping(headers: any[], fields: FieldDef[]): Record<string,
     }
   }
   return map;
+}
+
+// ---- Tally columnar registers: one column per ledger (Purchase @ 18%, Freight Inward, Input CGST @ 9%, Input SGST @ 9% ...)
+const TAX_HEAD: [string, RegExp][] = [['cgst', /\b(cgst|central tax)\b/], ['sgst', /\b(sgst|utgst|state tax|state\/ut tax)\b/], ['igst', /\b(igst|integrated tax)\b/], ['cess', /\bcess\b/]];
+/** a column that holds a rate, not an amount ("CGST %", "CGST Rate") */
+const RATE_COL = /\brate\b|percent|^%|%$/;
+/** ledger names that are value, not tax (purchase / sales / expense ledgers in a columnar export) */
+const VALUE_LEDGER = /purchase|sales?\b|expense|freight|carriage|cartage|transport|packing|labour|job ?work|repair|maintenance|rent|professional|consult|service|import|material|stores|spares|consumable|fees|charges|commission|advertis|insurance|hire|works contract|interstate|inter-state|local|exempt|nil rated|zero rated/;
+/** columns that must never be added to taxable or tax (totals, round-off, TDS, discounts, identifiers) */
+const NOT_VALUE = /gross|total|round|tds|tcs|discount|balance|narration|gstin|invoice|voucher|date|\bno\b|number|particulars|party|supplier|customer|address|state|place|type|hsn|sac|qty|quantity|uqc|unit|rate|%/;
+export function taxHeadOf(h: any): string | null {
+  const c = clean(h); if (!c || RATE_COL.test(c) && !/@/.test(c)) return null;
+  for (const [id, re] of TAX_HEAD) if (re.test(c)) return id;
+  return null;
+}
+/** true when a column holds amounts in the rows below the header */
+function numericCol(rows: any[][], header: number, j: number) {
+  let n = 0, num = 0;
+  for (const r of rows.slice(header + 1, header + 200)) { const v = r?.[j]; if (v === null || v === undefined || v === '') continue; n++; if (typeof v === 'number' || /^\(?-?[\d,]+(\.\d+)?\)?( ?(dr|cr))?$/i.test(String(v).trim())) num++; }
+  return n > 0 && num / n >= 0.9;
+}
+/** Tally columnar register? (several ledger columns for one tax head, or tax-ledger columns but no "taxable value" column) */
+export function looksColumnar(headers: any[]) {
+  const heads = headers.map(taxHeadOf).filter(Boolean) as string[];
+  const dup = new Set(heads).size < heads.length;
+  const hasTaxable = headers.map(clean).some(h => /^(taxable|assessable)/.test(h));
+  const ledgerish = headers.map(clean).some(h => /@ ?\d/.test(h) || /^input |^output /.test(h));
+  return !hasTaxable && (dup || ledgerish);
+}
+/** single-column guess plus, for columnar registers, every ledger column summed into taxable and each tax head */
+export function guessMappingFull(rows: any[][], header: number, fields: FieldDef[]): Mapping {
+  const hdr = rows[header] || [];
+  const map: Mapping = guessMapping(hdr, fields);
+  if (!looksColumnar(hdr)) return map;
+  const single = new Set(Object.entries(map).filter(([k]) => !fields.find(f => f.id === k)?.multi).map(([, v]) => v as number));
+  const tax: Record<string, number[]> = { cgst: [], sgst: [], igst: [], cess: [] }, val: number[] = [];
+  hdr.forEach((h, j) => {
+    if (single.has(j) || !numericCol(rows, header, j)) return;
+    const head = taxHeadOf(h);
+    if (head) { tax[head].push(j); return; }
+    const c = clean(h);
+    if (c && VALUE_LEDGER.test(c) && !NOT_VALUE.test(c.replace(/@ ?[\d.]+ ?%?/g, '').replace(/\b(purchases?|sales?|local|interstate|inter-state)\b/g, ''))) val.push(j);
+  });
+  for (const id of ['cgst', 'sgst', 'igst', 'cess']) if (tax[id].length) map[id] = tax[id];
+  if (val.length) map.taxable = val;
+  return map;
+}
+/** amount columns (numeric, below the header) that no field uses: in a columnar register these are usually a missed ledger */
+export function unusedAmountCols(rows: any[][], header: number, map: Mapping): number[] {
+  const used = new Set(Object.values(map).flatMap(colsOf));
+  const hdr = rows[header] || [];
+  return hdr.map((_, j) => j).filter(j => !used.has(j) && numericCol(rows, header, j) && !/date|\bdt\b|\bno\b|number|voucher|gstin|hsn|sac|qty|quantity|rate|round|\btds\b|\btcs\b|gross|balance|^%|%$/.test(clean(hdr[j])) && !(rows.slice(header + 1, header + 200).every(r => r?.[j] && typeof r[j] === 'number' && r[j] > 20000 && r[j] < 80000)));
 }
 
 export interface RegDefaults { noGstinZeroTax: string; itcType: string; status: string; claimFy: string; purNoGstin: string }
@@ -153,17 +212,27 @@ function purchaseType(raw: string, gstin: string, tax: number, dflt: string) {
   return reg ? 'B2B' : (tax ? dflt : dflt);
 }
 
-export interface Normalised { rows: any[][]; stats: { lines: number; docs: number; skipped: number; badDates: number; outsideFy: number; credit: number } }
-export function normalise(kind: RegKind, rows: any[][], headerRow: number, map: Record<string, number>, d: RegDefaults, fy: string): Normalised {
-  const get = (r: any[], id: string) => (map[id] === undefined || map[id] < 0 ? null : r[map[id]]);
+export interface Normalised { rows: any[][]; stats: { lines: number; docs: number; skipped: number; badDates: number; outsideFy: number; credit: number; grossOff: number; grossOffEg: string[] } }
+export function normalise(kind: RegKind, rows: any[][], headerRow: number, map: Mapping, d: RegDefaults, fy: string): Normalised {
+  const get = (r: any[], id: string) => { const c = colsOf(map[id]); return c.length ? r[c[0]] : null; };
+  /** amount field: sum of every mapped column (one column for ordinary registers, several ledger columns for Tally columnar) */
+  const sum = (r: any[], id: string) => colsOf(map[id]).reduce((a, j) => a + amt(r[j]), 0);
+  // round-off (signed), TDS (deducted from the party) and TCS (added) columns are allowed for in the gross-total check
+  const adjCol = (re: RegExp) => (rows[headerRow] || []).map((h, j) => (re.test(clean(h)) ? j : -1)).filter(j => j >= 0 && !colsOf(map.gross).includes(j));
+  const roundCols = adjCol(/round/), tdsCols = adjCol(/\btds\b/), tcsCols = adjCol(/\btcs\b/);
   const out: any[][] = []; const docs = new Set<string>();
-  const st = { lines: 0, docs: 0, skipped: 0, badDates: 0, outsideFy: 0, credit: 0 };
+  const st = { lines: 0, docs: 0, skipped: 0, badDates: 0, outsideFy: 0, credit: 0, grossOff: 0, grossOffEg: [] as string[] };
   for (const r of rows.slice(headerRow + 1)) {
     if (!r) continue;
     const no = String(get(r, 'no') ?? '').trim();
-    let tx = amt(get(r, 'taxable')), c = amt(get(r, 'cgst')), s = amt(get(r, 'sgst')), i = amt(get(r, 'igst')), cs = amt(get(r, 'cess'));
+    let tx = sum(r, 'taxable'), c = sum(r, 'cgst'), s = sum(r, 'sgst'), i = sum(r, 'igst'), cs = sum(r, 'cess');
+    [tx, c, s, i, cs] = [tx, c, s, i, cs].map(x => Math.round(x * 100) / 100);
     if (!no || (!tx && !c && !s && !i && !cs)) { if (no || tx) st.skipped++; continue; }
     if (/^(total|grand total|sub ?total)/i.test(no)) { st.skipped++; continue; }
+    if (isMapped(map.gross)) {
+      const g = amt(get(r, 'gross')), ro = roundCols.reduce((a, j) => a + amt(r[j]), 0) - tdsCols.reduce((a, j) => a + Math.abs(amt(r[j])), 0) + tcsCols.reduce((a, j) => a + Math.abs(amt(r[j])), 0);
+      if (g && Math.abs(Math.abs(g) - Math.abs(tx + c + s + i + cs + ro)) > 1) { st.grossOff++; if (st.grossOffEg.length < 3) st.grossOffEg.push(no); }
+    }
     const date = parseDate(get(r, 'date'));
     if (!/^\d{2}-\d{2}-\d{4}$/.test(date)) st.badDates++;
     else if (fyOfDate(date) !== fy) st.outsideFy++;

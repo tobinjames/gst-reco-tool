@@ -4,7 +4,7 @@ James & James LLP. Offline, single-page HTML tool for monthly ITC reconciliation
 
 - `loader/` Vite + TypeScript app, builds to one HTML file
 - `workbook/` Python (openpyxl) scripts that generate the Excel templates
-- `release/GST_Annual_Return_Loader.html` the current built tool (Loader v0.7, template 2026.11.20-7)
+- `release/GST_Annual_Return_Loader.html` the current built tool (Loader v0.8, template 2026.11.20-7)
 - `docs/HANDOVER.md` full handover: architecture, key decisions, open items
 
 ## Build
