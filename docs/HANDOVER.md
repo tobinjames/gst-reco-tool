@@ -35,7 +35,7 @@ workbook/
 Build: `cd loader && npm i && npx vite build` produces `dist/index.html`. Python scripts have absolute paths (/home/claude/...), so adjust them before running elsewhere. After changing the workbook, copy the .xlsx and rowmap.json/paths.json into loader/template and loader/src.
 
 ## UI (v0.8)
-The loader page was restyled (rounded cards, step badges, sticky top bar, mode cards with icons) keeping #2C388E and Onest. The logo in the top bar is a placeholder J&J monogram (inline SVG in loader/index.html and src/logo.svg): replace it with the firm logo file.
+The loader page was restyled (rounded cards, step badges, sticky top bar, mode cards with icons) keeping #2C388E and Onest. The top bar carries the firm logo (loader/src/brand/logo-blue.svg, inlined into index.html; black and white versions alongside); the favicon is the logo's ampersand mark.
 
 ## Key decisions (agreed with Tobin)
 - No macros and no Excel 365 functions (SUMIFS/INDEX/MATCH only). The browser does the parsing, because Power Query "From PDF" isn't available to every user.
