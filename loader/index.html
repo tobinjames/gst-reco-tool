@@ -185,7 +185,7 @@
     <input id="pick" type="file" multiple accept=".json,.pdf,.zip,.xlsx,.csv" hidden />
     <div id="coverage" style="margin-top:22px"></div>
     <details class="guide" id="guide">
-      <summary><span class="gq">?</span> Where do I get these files? <span class="muted">Step-by-step for the GST portal, Tally and Zoho Books</span></summary>
+      <summary><span class="gq">?</span> Where do I get these files? <span class="muted">GST portal, and purchases, journals and expenses from Tally and Zoho Books</span></summary>
       <div class="gtabs" role="tablist">
         <button class="gtab on" data-g="portal" role="tab">GST portal</button>
         <button class="gtab" data-g="tally" role="tab">Tally Prime</button>
@@ -213,31 +213,52 @@
         </div>
       </div>
       <div class="gpane" data-g="tally">
+        <p class="gstart">ITC is often booked outside the Purchase Register: expenses through <b>journals</b>, small bills through <b>payment vouchers</b>. The Purchase Register is the main file; step 3 shows whether anything sits outside it.</p>
         <div class="gitems">
-          <div class="gitem wide"><h4>Purchase register, columnar <span class="gfor">ITC reco · Annual</span></h4><ol>
+          <div class="gitem wide"><h4>1 · Purchase register, columnar <span class="gfor">ITC reco · Annual</span></h4><ol>
             <li>Gateway of Tally → <b>Display More Reports → Account Books → Purchase Register</b>.</li>
             <li>Set the period with <b>Alt+F2</b> (the month or the whole year). Open the month list with Enter if needed.</li>
             <li>Switch to the <b>Columnar</b> view (<b>Alt+F5</b>, or the <b>Columnar</b> button on the right).</li>
             <li>In the columnar options turn on <b>Supplier Invoice No.</b>, <b>Supplier Invoice Date</b>, <b>GSTIN/UIN</b> and <b>Gross Total</b>, and keep all ledger columns.</li>
             <li><b>Export</b> (<b>Ctrl+E</b>; <b>Alt+E</b> in older releases) → file format <b>Excel (Spreadsheet)</b> → Send.</li>
             <li>Drop the .xlsx here. The Loader picks the purchase / expense ledgers for taxable value and the Input CGST / SGST / IGST / Cess ledgers for tax. Check the chips under step 2b.</li></ol>
-            <p class="muted">Option names vary slightly between TallyPrime releases: if one is missing, look under <b>F12 Configure</b>. Debit notes and purchases booked as journals are not in the Purchase Register: export the Debit Note and Journal registers too if they carry ITC.</p></div>
+            <p class="muted">Option names vary slightly between TallyPrime releases: if one is missing, look under <b>F12 Configure</b>.</p></div>
+          <div class="gitem wide"><h4>2 · Journals and payment vouchers with GST <span class="gfor">ITC reco · Annual</span></h4><ul>
+            <li>Don't use the <b>columnar</b> Journal or Payment Register: it gets one column per ledger and becomes unmanageable.</li>
+            <li>They all pass through the Input CGST / SGST / IGST / Cess ledgers. For now, open those ledgers (step 3 below) to list them and review them alongside the reconciliation. Loading the GST ledgers directly, in detailed format, is being built.</li></ul></div>
+          <div class="gitem"><h4>3 · Check nothing is missing <span class="gfor">ITC reco · Annual</span></h4><ol>
+            <li><b>Display More Reports → Account Books → Ledger</b> → open <b>Input CGST</b> (then SGST, IGST, Cess), same period.</li>
+            <li>The debit total for the period should equal the CGST (SGST, IGST, Cess) total of all registers loaded here (shown in the preview under step 2b).</li>
+            <li>A difference is ITC booked through journals, payments or other voucher types that are not in the files loaded. Open the ledger with <b>Alt+F1</b> to see the voucher types.</li></ol></div>
+          <div class="gitem"><h4>Debit notes / purchase returns</h4><ul>
+            <li>Don't load the <b>Debit Note Register</b> as a purchase register yet: the Loader reads every row as an invoice, so returns would be added instead of deducted.</li>
+            <li>Suppliers' credit notes appear on the 2B side (CDNR) and show up in the reconciliation as "in 2B, not in books" for review.</li></ul></div>
           <div class="gitem"><h4>Sales register <span class="gfor">Annual</span></h4><ol>
-            <li>Gateway of Tally → <b>Display More Reports → Account Books → Sales Register</b>.</li>
+            <li><b>Display More Reports → Account Books → Sales Register</b>.</li>
             <li>Same steps: period, <b>Columnar</b>, turn on <b>Voucher No.</b>, <b>GSTIN/UIN</b> and <b>Gross Total</b>, then <b>Export</b> to Excel.</li>
-            <li>Credit notes are in the Credit Note Register: export it as well.</li></ol></div>
+            <li>Credit notes: export the <b>Credit Note Register</b> the same way and map its type column (or the Loader reads negative amounts as credit notes).</li></ol></div>
         </div>
       </div>
       <div class="gpane" data-g="zoho">
+        <p class="gstart">Zoho keeps ITC in three places: <b>Bills</b>, <b>Expenses</b> and <b>Manual Journals</b>. Export each one that carries GST and drop them here together.</p>
         <div class="gitems">
           <div class="gitem"><h4>Bills (purchases) <span class="gfor">ITC reco · Annual</span></h4><ol>
             <li><b>Purchases → Bills</b>.</li>
             <li>Open the menu (☰) at the top right → <b>Export Bills</b>.</li>
-            <li>Choose the date range, format <b>XLSX</b> (or CSV) → <b>Export</b>.</li>
-            <li>For vendor credits: <b>Purchases → Vendor Credits</b> → Export.</li></ol></div>
+            <li>Choose the date range, format <b>XLSX</b> (or CSV) → <b>Export</b>.</li></ol></div>
+          <div class="gitem"><h4>Expenses <span class="gfor">ITC reco · Annual</span></h4><ol>
+            <li><b>Purchases → Expenses</b> → menu (☰) → <b>Export Expenses</b>.</li>
+            <li>Date range, <b>XLSX</b> → <b>Export</b>.</li>
+            <li>In step 2b map <b>Supplier invoice no.</b> to the reference / invoice# column and check the taxable and tax columns. Expenses without GST are not compared.</li></ol></div>
+          <div class="gitem"><h4>Manual journals <span class="gfor">ITC reco · Annual</span></h4><ol>
+            <li><b>Accountant → Manual Journals</b> → menu (☰) → <b>Export</b>.</li>
+            <li>Needed only if ITC is booked by journal (for example reverse charge or ITC reversals). The export has one row per journal line, so map the input-tax account lines carefully, or keep these for manual review.</li></ol></div>
           <div class="gitem"><h4>Invoices (sales) <span class="gfor">Annual</span></h4><ol>
             <li><b>Sales → Invoices</b> → menu (☰) → <b>Export Invoices</b>, date range, XLSX → Export.</li>
             <li>For credit notes: <b>Sales → Credit Notes</b> → Export.</li></ol></div>
+          <div class="gitem"><h4>Check nothing is missing</h4><ul>
+            <li><b>Reports → Account Transactions</b> (or the General Ledger) for the <b>Input CGST / SGST / IGST</b> accounts: the period's debits should equal the tax totals of everything loaded here.</li>
+            <li>Vendor credits (purchase returns) are not read as returns yet, so don't load them as purchases.</li></ul></div>
           <div class="gitem"><h4>Good to know</h4><ul>
             <li>Zoho exports one row per item line. That is fine: lines are added up to invoice level.</li>
             <li>Columns such as <i>Bill Number</i>, <i>GST Identification Number (GSTIN)</i>, <i>Item Total</i>, CGST, SGST, IGST map automatically.</li></ul></div>
