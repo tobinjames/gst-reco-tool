@@ -3,8 +3,12 @@ import JSZip from 'jszip';
 import { G1File, isGstr1, processGstr1 } from './gstr1';
 import { is2b, process2b } from './gstr2b';
 import { ThreeB } from './gstr3b';
+import { readTable } from './register';
+import { parsePortal, portalKindOf } from './flow/portal';
+import { looksLikeBooks, parseBooks } from './flow/books';
+import { BookFile, PORTAL_LABEL, PortalLedger } from './flow/types';
 import { isPortal9, processPortal9 } from './portal9';
-import { RawRow, Warn, fyOfPeriod, fyShift, r2 } from './util';
+import { RawRow, Warn, fyOfDate, fyOfPeriod, fyShift, r2 } from './util';
 import { Reader, Workbook, colLetter as colLetterOf } from './xlsx';
 import { RAW_SHEETS, fingerprint, seal, sealLines, readRows } from './integrity';
 import { DEFAULT_MATCH, KeepApart, Manual, MatchOptions, describeMatch, reconPurchases, reconSales } from './recon';
@@ -14,8 +18,8 @@ export interface Decisions { manual: Manual; keepApart: KeepApart }
 export interface ReconExtra { match?: MatchOptions; decisions?: { purchases?: Decisions; sales?: Decisions } }
 export const LOADER_VERSION = '0.4';
 
-export type Kind = 'GSTR-1' | 'GSTR-2B' | 'GSTR-3B' | 'GSTR-9 (portal)' | 'Workbook' | 'Register' | 'Unknown';
-export interface InFile { name: string; hash?: string; kind: Kind; json?: any; threeB?: ThreeB; bytes?: Uint8Array; gstin?: string; period?: string; fy?: string; note?: string }
+export type Kind = 'GSTR-1' | 'GSTR-2B' | 'GSTR-3B' | 'GSTR-9 (portal)' | 'Workbook' | 'Register' | 'Portal ledger' | 'Books ledger' | 'Unknown';
+export interface InFile { name: string; hash?: string; kind: Kind; json?: any; threeB?: ThreeB; bytes?: Uint8Array; gstin?: string; period?: string; fy?: string; note?: string; portal?: PortalLedger; books?: BookFile }
 
 /** expand zips, parse JSON, detect kind. pdfs are parsed by the caller (pdf.js differs in browser / node) */
 export async function sha1(bytes: Uint8Array) {
@@ -45,6 +49,23 @@ async function classifyInner(name: string, bytes: Uint8Array, parsePdf: (b: Uint
   if (lower.endsWith('.xlsx') || lower.endsWith('.csv')) {
     if (lower.endsWith('.xlsx')) { try { const rd = await Reader.open(bytes); if (rd.has('RAW_GSTR1') && rd.has('Basic')) return [{ name, kind: 'Workbook', bytes, note: 'Annual return workbook' }];
       if (rd.has('_ITC') && rd.has('Recon_Purchases')) return [{ name, kind: 'Workbook', bytes, note: 'ITC reconciliation workbook' }]; } catch { return [{ name, kind: 'Unknown', note: 'Could not open the Excel file' }]; } }
+    // GST portal ledgers and books ledgers / GL dumps (for the GST ledger flow tab); anything else is a register to map
+    try {
+      const sheets = await readTable(name, bytes);
+      for (const sh of sheets) {
+        if (portalKindOf(sh.rows)) {
+          const p = parsePortal(sh.rows);
+          return [{ name, kind: 'Portal ledger', bytes, portal: p, gstin: p.gstin, fy: fyOfDate(p.from), note: `${PORTAL_LABEL[p.kind]} · ${p.from || '?'} to ${p.to || '?'}${p.problems.length ? ` · ${p.problems.length} issue(s)` : ''}` }];
+        }
+      }
+      for (const sh of sheets) if (looksLikeBooks(sh.rows)) {
+        const b = parseBooks(name, sh.rows);
+        const ds = b.lines.map(l => l.date.slice(6) + l.date.slice(3, 5) + l.date.slice(0, 2)).sort();
+        const span = ds.length ? `${ds[0].slice(6)}-${ds[0].slice(4, 6)}-${ds[0].slice(0, 4)} to ${ds[ds.length - 1].slice(6)}-${ds[ds.length - 1].slice(4, 6)}-${ds[ds.length - 1].slice(0, 4)}` : '';
+        return [{ name, kind: 'Books ledger', bytes, books: b, fy: ds.length ? fyOfDate(`${ds[0].slice(6)}-${ds[0].slice(4, 6)}-${ds[0].slice(0, 4)}`) : undefined,
+          note: `${b.format === 'tally-dump' ? 'Tally voucher dump' : b.format === 'zoho-gl' ? 'Zoho detailed GL' : `Ledger: ${b.ledger}`} · ${b.lines.length} lines${span ? ' · ' + span : ''}` }];
+      }
+    } catch { /* fall through: treat as a register */ }
     return [{ name, kind: 'Register', bytes, note: 'map columns below' }];
   }
   if (lower.endsWith('.xls')) return [{ name, kind: 'Unknown', note: 'Old .xls format: open in Excel and save as .xlsx' }];
