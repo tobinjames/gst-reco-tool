@@ -1,3 +1,4 @@
+import { nameKey } from './suppliers';
 // Invoice-level reconciliation: purchase register vs GSTR-2B, sales register vs GSTR-1
 import { fyOfDate, r2 } from './util';
 
@@ -109,9 +110,7 @@ export function reconPurchases(bookRows: any[][], b2bRows: any[][], cy: string, 
       amt: sumAmt(use.map(r => [nz(r[1]), nz(r[2]), nz(r[3]), nz(r[4]), nz(r[5])])),
       extra: { bfy: String(f[7]), period: String(f[8]), section: String(f[9]), avl: String(f[16] ?? ''), rcm: String(f[17] ?? ''), dfy: String(f[15] ?? '') } });
   }
-  // books without supplier GSTIN: take it from 2B - by supplier name, else by invoice no. + amount
-  const nameKey = (n: any) => String(n ?? '').toUpperCase().replace(/&/g, ' AND ').replace(/\bM\/S\b/g, ' ').replace(/[^A-Z0-9 ]/g, ' ')
-    .split(/\s+/).filter(w => w && !['PRIVATE', 'PVT', 'LIMITED', 'LTD', 'LLP', 'CO', 'COMPANY', 'THE', 'MS', 'P'].includes(w)).join(' ');
+  // books without supplier GSTIN: take it from 2B - by exact (normalised) supplier name, else by invoice no. + amount
   const byName = new Map<string, Set<string>>();
   for (const r of ret) if (r.gstin && r.name) { const k = nameKey(r.name); if (!byName.has(k)) byName.set(k, new Set()); byName.get(k)!.add(r.gstin); }
   let inferred = 0, noGstin = 0;
@@ -121,10 +120,7 @@ export function reconPurchases(bookRows: any[][], b2bRows: any[][], cy: string, 
     const k = nameKey(b.name);
     let g = k && byName.get(k)?.size === 1 ? [...byName.get(k)!][0] : '';
     let how = 'supplier name';
-    if (!g && k.length >= 5) {
-      const hits = new Set<string>(); for (const [nk, gs] of byName) if (nk.length >= 5 && (nk.includes(k) || k.includes(nk))) gs.forEach(x => hits.add(x));
-      if (hits.size === 1) g = [...hits][0];
-    }
+    // approximate names are not guessed here: the Loader suggests them and the user confirms (suppliers.ts)
     if (!g) {
       const r = ret.find(r => normNo(r.no) === normNo(b.no) && Math.abs(tax(r.amt) - tax(b.amt)) <= TOL);
       if (r) { g = r.gstin; how = 'invoice no. + amount'; }

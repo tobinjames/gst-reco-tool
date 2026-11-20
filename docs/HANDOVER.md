@@ -43,6 +43,7 @@ The loader page was restyled (rounded cards, step badges, sticky top bar, mode c
 - Branding: James & James design system (#2C388E, Onest on the web page, Arial in Excel). Every sheet says "Prepared by James & James LLP".
 - ICAI Technical Guides followed: 7I includes 7E; 7F = 4N − 4G + 10 − 11; 9Q = Table 9 + Table 14; 12E/14S = 7J; 8B = 6B only; rule 37/37A reclaims go to 6H, other prior-year reclaims to 6A1; next-FY credit notes (Apr–Nov) are tagged 11-REVIEW.
 - GSTR-9C FY 2025-26: self-certified. No Part B / DSC in the offline tool, so the JSON can be generated directly (not built yet).
+- Supplier names (v0.8): books lines without GSTIN get it from 2B only by exact normalised name (automatic), by a name the user confirmed in step 2c of the Loader (approximate match: typo-tolerant tokens, bigrams, initials, invoice-no. hits; remembered in the browser, src/suppliers.ts), or by invoice no. + amount. The old automatic substring guess was removed.
 - Matching order: manual codes, then invoice no. (punctuation ignored), digits, last digits/tail (amounts agree), GSTIN+date+amount, number+amount with GSTIN differing, supplier totals, then hints. Missing GSTIN is taken from 2B by supplier name or by invoice no. + amount. Zero-tax lines are not compared. Tolerance ₹1.
 
 ## Open items / next steps
