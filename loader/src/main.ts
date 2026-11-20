@@ -12,6 +12,10 @@ import { FieldDef, Mapping, PURCHASE_FIELDS, RegKind, RegSheet, SALES_FIELDS, co
 (globalThis as any).pdfjsWorker = pdfWorker;
 
 const $ = (id: string) => document.getElementById(id)! as any;
+// "where do I get these files" guide: tabs
+document.querySelectorAll('button.gtab').forEach((b: any) => (b.onclick = () => {
+  document.querySelectorAll('.gtab, .gpane').forEach((x: any) => x.classList.toggle('on', x.dataset.g === b.dataset.g));
+}));
 let files: InFile[] = [];
 type Mode = 'itc' | 'annual';
 let mode: Mode = (() => { try { return (localStorage.getItem('jjmode') as Mode) || 'annual'; } catch { return 'annual'; } })();

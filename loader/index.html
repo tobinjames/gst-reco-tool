@@ -104,7 +104,7 @@
   .reg { border:1px solid var(--line); border-radius:var(--r); padding:20px 22px; margin-bottom:16px; background:#fcfcfe; }
   .reg h3 { margin:0 0 12px; font-weight:600; font-size:15.5px; color:var(--strong); display:flex; align-items:center; gap:10px; }
   .reg h3::before { content:""; width:30px; height:30px; flex:none; border-radius:8px; background:var(--ok-bg) center/16px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231e7b45' stroke-width='2'%3E%3Crect x='3' y='3' width='18' height='18' rx='2'/%3E%3Cpath d='M3 9h18M3 15h18M9 3v18'/%3E%3C/svg%3E"); }
-  .mapgrid { align-items:start; display:grid; grid-template-columns:repeat(auto-fill, minmax(250px, 1fr)); gap:14px 18px; margin:16px 0; padding:16px; background:#fff; border:1px solid var(--line); border-radius:var(--r-sm); }
+  .mapgrid { align-items:start; display:grid; grid-template-columns:repeat(auto-fill, minmax(min(250px, 100%), 1fr)); gap:14px 18px; margin:16px 0; padding:16px; background:#fff; border:1px solid var(--line); border-radius:var(--r-sm); }
   .mapgrid label { align-content:start; }
   .mapgrid label select { min-width:0; width:100%; }
   .mapgrid select.addcol { border-style:dashed; color:var(--muted); font-size:13px; padding:6px 30px 6px 10px; }
@@ -117,6 +117,27 @@
   .callout b { color:var(--brand); }
   .prev { font-size:12px; overflow-x:auto; border:1px solid var(--line); border-radius:var(--r-sm); margin-top:8px; }
   .prev td, .prev th { padding:6px 10px; white-space:nowrap; }
+  /* "where do I get these files" guide */
+  details.guide { margin-top:16px; border:1px solid var(--line); border-radius:var(--r); background:#fcfcfe; }
+  details.guide > summary { cursor:pointer; padding:14px 18px; font-weight:600; color:var(--strong); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  details.guide > summary::before { display:none; }
+  details.guide > summary .muted { font-weight:400; }
+  .gq { display:inline-grid; place-items:center; width:24px; height:24px; border-radius:999px; background:var(--tint); color:var(--brand); font-size:13px; }
+  details.guide[open] > summary { border-bottom:1px solid var(--line); }
+  .gtabs { display:flex; gap:6px; padding:14px 18px 0; flex-wrap:wrap; }
+  button.gtab { background:#fff; color:var(--text); border:1px solid var(--line-2); box-shadow:none; padding:7px 14px; font-size:13px; font-weight:500; border-radius:999px; }
+  button.gtab:hover { background:var(--tint); }
+  button.gtab.on { background:var(--brand); color:#fff; border-color:var(--brand); }
+  .gpane { display:none; padding:14px 18px 4px; } .gpane.on { display:block; }
+  .gstart { margin:0 0 12px; color:var(--strong); font-size:14px; }
+  .gitems { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap:12px; }
+  .gitem { background:#fff; border:1px solid var(--line); border-radius:var(--r-sm); padding:14px 16px; }
+  .gitem.wide { grid-column:1 / -1; }
+  .gitem h4 { margin:0 0 6px; font-size:14.5px; font-weight:600; color:var(--strong); display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .gfor { font-size:11px; font-weight:600; color:var(--brand); background:var(--tint); padding:2px 8px; border-radius:999px; }
+  .gitem ol, .gitem ul { margin:0; padding-left:20px; font-size:13.5px; color:var(--strong); display:grid; gap:4px; }
+  .gitem p.muted { margin:8px 0 0; }
+  .gfoot { margin:10px 18px 16px; }
   /* mode picker */
   .modes { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
   button.mode { position:relative; text-align:left; background:#fff; color:var(--text); border:1.5px solid var(--line); box-shadow:none; padding:20px 22px 20px 74px; font-weight:400; font-size:14px; line-height:1.55; display:grid; gap:4px; border-radius:var(--r); }
@@ -163,6 +184,76 @@
       <span class="muted" id="dropHint">GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Nov) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it</span></div>
     <input id="pick" type="file" multiple accept=".json,.pdf,.zip,.xlsx,.csv" hidden />
     <div id="coverage" style="margin-top:22px"></div>
+    <details class="guide" id="guide">
+      <summary><span class="gq">?</span> Where do I get these files? <span class="muted">Step-by-step for the GST portal, Tally and Zoho Books</span></summary>
+      <div class="gtabs" role="tablist">
+        <button class="gtab on" data-g="portal" role="tab">GST portal</button>
+        <button class="gtab" data-g="tally" role="tab">Tally Prime</button>
+        <button class="gtab" data-g="zoho" role="tab">Zoho Books</button>
+        <button class="gtab" data-g="other" role="tab">Other software / Excel</button>
+      </div>
+      <div class="gpane on" data-g="portal">
+        <p class="gstart">Log in at <b>gst.gov.in</b> → <b>Services → Returns → Returns Dashboard</b> → pick the financial year and period → <b>Search</b>.</p>
+        <div class="gitems">
+          <div class="gitem"><h4>GSTR-2B <span class="gfor">ITC reco · Annual</span></h4><ol>
+            <li>On the <b>GSTR-2B</b> tile click <b>Download</b>.</li>
+            <li>Click <b>Generate JSON file to download</b> and save the JSON.</li>
+            <li>Repeat for each month. Annual return: every month of the year plus April to November of the next year.</li></ol></div>
+          <div class="gitem"><h4>GSTR-1 <span class="gfor">Annual</span></h4><ol>
+            <li>On the <b>GSTR-1 / IFF</b> tile click <b>Download</b>.</li>
+            <li>Click <b>Generate JSON file to download</b>. The link appears after a few minutes (refresh the page).</li>
+            <li>Download the ZIP and drop it here as it is. Needed for the previous, current and next financial year.</li></ol></div>
+          <div class="gitem"><h4>GSTR-3B <span class="gfor">Annual</span></h4><ol>
+            <li>On the <b>GSTR-3B</b> tile of a filed period click <b>Download</b> to save the PDF.</li>
+            <li>One PDF per month (per quarter for QRMP filers).</li></ol></div>
+          <div class="gitem"><h4>GSTR-9 auto-drafted <span class="gfor">Annual</span></h4><ol>
+            <li>Returns Dashboard → <b>Annual Return</b> → pick the financial year.</li>
+            <li>On the <b>GSTR-9</b> tile click <b>Prepare Offline</b> → <b>Download</b> tab.</li>
+            <li>Click <b>Generate JSON file to download</b>, then download the file when the link appears.</li></ol></div>
+        </div>
+      </div>
+      <div class="gpane" data-g="tally">
+        <div class="gitems">
+          <div class="gitem wide"><h4>Purchase register, columnar <span class="gfor">ITC reco · Annual</span></h4><ol>
+            <li>Gateway of Tally → <b>Display More Reports → Account Books → Purchase Register</b>.</li>
+            <li>Set the period with <b>Alt+F2</b> (the month or the whole year). Open the month list with Enter if needed.</li>
+            <li>Switch to the <b>Columnar</b> view (<b>Alt+F5</b>, or the <b>Columnar</b> button on the right).</li>
+            <li>In the columnar options turn on <b>Supplier Invoice No.</b>, <b>Supplier Invoice Date</b>, <b>GSTIN/UIN</b> and <b>Gross Total</b>, and keep all ledger columns.</li>
+            <li><b>Export</b> (<b>Ctrl+E</b>; <b>Alt+E</b> in older releases) → file format <b>Excel (Spreadsheet)</b> → Send.</li>
+            <li>Drop the .xlsx here. The Loader picks the purchase / expense ledgers for taxable value and the Input CGST / SGST / IGST / Cess ledgers for tax. Check the chips under step 2b.</li></ol>
+            <p class="muted">Option names vary slightly between TallyPrime releases: if one is missing, look under <b>F12 Configure</b>. Debit notes and purchases booked as journals are not in the Purchase Register: export the Debit Note and Journal registers too if they carry ITC.</p></div>
+          <div class="gitem"><h4>Sales register <span class="gfor">Annual</span></h4><ol>
+            <li>Gateway of Tally → <b>Display More Reports → Account Books → Sales Register</b>.</li>
+            <li>Same steps: period, <b>Columnar</b>, turn on <b>Voucher No.</b>, <b>GSTIN/UIN</b> and <b>Gross Total</b>, then <b>Export</b> to Excel.</li>
+            <li>Credit notes are in the Credit Note Register: export it as well.</li></ol></div>
+        </div>
+      </div>
+      <div class="gpane" data-g="zoho">
+        <div class="gitems">
+          <div class="gitem"><h4>Bills (purchases) <span class="gfor">ITC reco · Annual</span></h4><ol>
+            <li><b>Purchases → Bills</b>.</li>
+            <li>Open the menu (☰) at the top right → <b>Export Bills</b>.</li>
+            <li>Choose the date range, format <b>XLSX</b> (or CSV) → <b>Export</b>.</li>
+            <li>For vendor credits: <b>Purchases → Vendor Credits</b> → Export.</li></ol></div>
+          <div class="gitem"><h4>Invoices (sales) <span class="gfor">Annual</span></h4><ol>
+            <li><b>Sales → Invoices</b> → menu (☰) → <b>Export Invoices</b>, date range, XLSX → Export.</li>
+            <li>For credit notes: <b>Sales → Credit Notes</b> → Export.</li></ol></div>
+          <div class="gitem"><h4>Good to know</h4><ul>
+            <li>Zoho exports one row per item line. That is fine: lines are added up to invoice level.</li>
+            <li>Columns such as <i>Bill Number</i>, <i>GST Identification Number (GSTIN)</i>, <i>Item Total</i>, CGST, SGST, IGST map automatically.</li></ul></div>
+        </div>
+      </div>
+      <div class="gpane" data-g="other">
+        <div class="gitems">
+          <div class="gitem wide"><h4>Any accounting software or Excel</h4><ul>
+            <li>Export the GST purchase / sales register (for Busy, Marg and others, the GSTR-2 / GSTR-1 register) to <b>.xlsx</b> or <b>.csv</b>.</li>
+            <li>One row per invoice or per item line. Needed columns: <b>invoice date</b>, <b>invoice no.</b> (the supplier's number for purchases), <b>taxable value</b>. Strongly recommended: <b>GSTIN</b>, CGST, SGST, IGST, Cess.</li>
+            <li>Title rows above the header and a total row at the bottom are fine; the Loader finds the header row itself and skips totals.</li>
+            <li>Column names don't matter: map them under step 2b. Mappings are remembered for registers with the same columns.</li></ul></div>
+        </div>
+      </div>
+      <p class="muted gfoot">Menus as of November 2026. The GST portal, Tally and Zoho change button names from time to time: if one differs, look for the nearest <b>Download</b> or <b>Export</b>.</p>
+    </details>
     <details id="filelist" style="margin-top:18px"><summary class="eyebrow" style="cursor:pointer">Files added</summary><div id="files" style="margin-top:10px"></div></details>
   </section>
   <section class="card" id="regcard" style="display:none">
