@@ -455,6 +455,6 @@ async function buildItcNow(fy: string) {
 }
 
 // ---------- GST ledger flow tab
-const flow = new FlowTab(() => ({ files: activeFiles(), fy: $('fy').value, gstin: clientGstin(), legal: String($('legal').value || '').trim(), active: tab === 'flow' }), () => render());
+const flow = new FlowTab(() => ({ files: activeFiles(), fy: $('fy').value, gstin: clientGstin(), legal: String($('legal').value || '').trim(), active: tab === 'flow', register: () => registerRows($('fy').value, true).purchases }), () => render());
 
 setTab(tab);

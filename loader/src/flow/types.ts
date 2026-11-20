@@ -44,6 +44,8 @@ export interface BookLine {
   dr: number; cr: number;
   /** Zoho gives the account type (bank, cash, expense…), Tally does not */
   accGroup: string;
+  /** supplier / customer invoice no. where the export carries it (Tally "reference", Zoho "reference number") */
+  ref?: string;
 }
 export interface BookFile {
   name: string; format: 'tally-dump' | 'zoho-gl' | 'ledger';

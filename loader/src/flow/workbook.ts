@@ -4,10 +4,11 @@ import { C, SheetSpec, col, serial, writeBook } from '../xlsxbook';
 import { BUCKETS, BLOCK_LABEL, Block, INTERNAL, PORTAL_LABEL, UNMAPPED, ACC_TYPE_LABEL, bucketOf } from './types';
 import { HEAD_KEYS, HeadK, Result, bucketLabel, ymLabel } from './engine';
 import { FLOW_GUIDE } from './guide';
-import { ledgerLabel, reconcile } from './recon';
+import { BLOCK_NAME, Year } from './year';
+import { Itc3 } from './itc3';
 
 export interface AuditRow { when: string; change: string; record: string; from: string; to: string; remark: string }
-export interface FlowMeta { gstin: string; legalName: string; fy: string; from: string; to: string; files: { name: string; kind: string; note: string }[]; audit: AuditRow[]; builtAt: string }
+export interface FlowMeta { gstin: string; legalName: string; fy: string; from: string; to: string; files: { name: string; kind: string; note: string }[]; audit: AuditRow[]; builtAt: string; year: Year; itc: Itc3 | null }
 
 const HEADS_TXT: Record<HeadK, string> = { IGST: 'IGST', CGST: 'CGST', SGST: 'SGST', CESS: 'Cess', ALL: 'Not split by head' };
 const BLOCKS: Block[] = ['itc', 'liab', 'cash', 'fee'];
@@ -20,29 +21,26 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   // one portal reference per file line (a line has several heads / components)
   const pLine = new Map<string, string>();
   r.portal.forEach(e => { const k = `${e.file}#${e.row}`; if (!pLine.has(k)) pLine.set(k, `PL${String(pLine.size + 1).padStart(5, '0')}`); pref.set(e.id, pLine.get(k)!); });
-  const rc = reconcile(r);
-  const itemsOf = new Map<string, string[]>();
-  for (const ev of rc.events) for (const id of [...ev.books, ...ev.portal]) { const a = itemsOf.get(id) || []; if (!a.includes(ev.id)) a.push(ev.id); itemsOf.set(id, a); }
   const period = `${ymLabel(meta.from)} to ${ymLabel(meta.to)}`;
   const title = (t: string): C[][] => [[{ v: t, s: 'title' }], [{ v: `${meta.legalName || 'Client'} · GSTIN ${meta.gstin || '-'} · FY ${meta.fy} · ${period} · Prepared by James & James LLP`, s: 'sub' }], []];
   const hdr = (cols: string[]): C[] => cols.map(c => ({ v: c, s: 'hdr' }));
 
   // ---- Books_Lines
   const BL_H = 4; // header row
-  const books: C[][] = [...title('Books ledger lines (GST accounts)'), hdr(['Ref', 'Source file', 'Row', 'Date', 'Month', 'Compared with return period', 'In period', 'Voucher type', 'Voucher no.', 'Party / particulars', 'Account', 'Account type', 'Head', 'Debit', 'Credit', 'Effect on balance', 'Block', 'Flow row code', 'Flow row', 'Row amount', 'Classified by', 'Reconciling items', 'Narration'])];
+  const books: C[][] = [...title('Books ledger lines (GST accounts)'), hdr(['Ref', 'Source file', 'Row', 'Date', 'Month', 'Compared with return period', 'In period', 'Voucher type', 'Voucher no.', 'Party / particulars', 'Account', 'Account type', 'Head', 'Debit', 'Credit', 'Effect on balance', 'Block', 'Flow row code', 'Flow row', 'Row amount', 'Classified by', 'Narration'])];
   r.books.forEach((e, i) => {
     const row = BL_H + 1 + i, l = e.line, sign = bucketOf(e.bucket)?.sign ?? 1;
     books.push([bref.get(e.id), l.file, l.row, { v: serial(l.date), s: 'date' }, ymLabel(l.date.slice(6) + '-' + l.date.slice(3, 5)), ymLabel(e.month), e.where, l.vchType, l.vchNo, l.party, l.account, ACC_TYPE_LABEL[e.accType], e.head,
       l.dr || null, l.cr || null, { f: e.block === 'liab' ? `O${row}-N${row}` : `N${row}-O${row}`, v: e.effect }, e.block, e.bucket, bucketLabel(e.bucket),
-      { f: sign === 1 ? `P${row}` : `-P${row}`, v: N(e.effect * sign) }, e.rule, (itemsOf.get(e.id) || []).join(', '), l.narration]);
+      { f: sign === 1 ? `P${row}` : `-P${row}`, v: N(e.effect * sign) }, e.rule, l.narration]);
   });
   // ---- Portal_Lines
-  const portal: C[][] = [...title('Portal ledger lines'), hdr(['Ref', 'Ledger', 'Source file', 'Row', 'Date', 'Reference', 'Return period', 'Compared in month', 'In period', 'Description', 'Dr / Cr', 'Ledger used', 'Head', 'Component', 'Amount', 'Effect on balance', 'Block', 'Flow row code', 'Flow row', 'Row amount', 'Reconciling items'])];
+  const portal: C[][] = [...title('Portal ledger lines'), hdr(['Ref', 'Ledger', 'Source file', 'Row', 'Date', 'Reference', 'Return period', 'Compared in month', 'In period', 'Description', 'Dr / Cr', 'Ledger used', 'Head', 'Component', 'Amount', 'Effect on balance', 'Block', 'Flow row code', 'Flow row', 'Row amount'])];
   r.portal.forEach((e, i) => {
     const row = BL_H + 1 + i, sign = bucketOf(e.bucket)?.sign ?? 1, es = e.amount ? Math.sign(e.effect / e.amount) : 1;
     portal.push([pref.get(e.id), PORTAL_LABEL[e.kind], e.file, e.row, { v: serial(e.date), s: 'date' }, e.ref, ymLabel(e.month), ymLabel(e.month), e.block ? e.where : 'not in the flow', e.desc, e.dir, e.used, e.head, e.comp,
       e.amount, { f: es === 1 ? `O${row}` : `-O${row}`, v: e.effect }, e.block || '', e.block ? e.bucket : '', e.block ? bucketLabel(e.bucket) : 'Discharge of interest / fee (shown in the cash ledger)',
-      e.block ? { f: sign === 1 ? `P${row}` : `-P${row}`, v: N(e.effect * sign) } : null, (itemsOf.get(e.id) || []).join(', ')]);
+      e.block ? { f: sign === 1 ? `P${row}` : `-P${row}`, v: N(e.effect * sign) } : null]);
   });
   // ---- Balances
   const bal: C[][] = [...title('Opening balances used in the flow'), hdr(['Side', 'Block', 'Head', 'Ledger / account', 'Source', 'Amount (in the block\'s direction)', 'As printed or entered'])];
@@ -62,7 +60,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   const flowSheet = (side: 'Books' | 'Portal' | 'Difference'): C[][] => {
     const st = side === 'Books' ? r.flowBooks : side === 'Portal' ? r.flowPortal : null;
     const out: C[][] = [...title(side === 'Difference' ? 'GST flow: difference (books − portal)' : `GST flow as per ${side === 'Books' ? 'books' : 'the GST portal'}`)];
-    out.push([{ v: side === 'Books' ? 'Built only from the books ledgers (Books_Lines) and the opening balances (Balances). Books by voucher date.' : side === 'Portal' ? 'Built only from the credit ledger, cash ledger and liability register (Portal_Lines) and their opening balances. Portal by return period.' : 'Each cell is Flow_Books minus Flow_Portal. The closing difference is the sum of the row differences. Recon_Items explains every row.', s: 'note' }]);
+    out.push([{ v: side === 'Books' ? 'Built only from the books ledgers (Books_Lines) and the opening balances (Balances). Books by voucher date.' : side === 'Portal' ? 'Built only from the credit ledger, cash ledger and liability register (Portal_Lines) and their opening balances. Portal by return period.' : 'Each cell is Flow_Books minus Flow_Portal. The closing difference is the sum of the row differences. Year_Compare and Closing explain them.', s: 'note' }]);
     out.push(hdr(['Flow row', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'Row code']));
     const lay = side === 'Books' || !layout.length;
     for (const b of BLOCKS) {
@@ -98,49 +96,97 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   const fixTotals = (rows: C[][]) => rows.forEach(rw => { const t = rw[6] as any; if (t && typeof t === 'object' && t.f?.startsWith('SUM(B')) t.v = N(rw.slice(1, 6).reduce((s: number, c: any) => s + (typeof c === 'object' && c ? +c.v || 0 : 0), 0)); });
   const fBooks = flowSheet('Books'), fPortal = flowSheet('Portal'), fDiff = flowSheet('Difference');
   [fBooks, fPortal, fDiff].forEach(fixTotals);
-  fDiff.push([{ v: 'The Reconciliation sheet takes the closing as per books to the closing as per portal, item by item (Recon_Items).', s: 'note' }]);
+  fDiff.push([{ v: 'Year_Compare compares each movement for the year; Closing takes the closing as per books, with the suggested journals, to the closing as per portal.', s: 'note' }]);
 
-  // ---- Recon_Items: one row per event; amounts are the adjustment that takes the books closing to the portal closing
-  const IH = (h: HeadK) => col(7 + HEAD_KEYS.indexOf(h)); // H..L
-  const items: C[][] = [...title('Reconciling items: books to portal'), hdr(['No.', 'Ledger', 'Effect on closing', 'Status', 'What happened', 'Return period(s)', 'Vouchers', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'Amount involved (no effect on closing)', 'Action', 'Flow row(s)', 'Books lines', 'Portal lines'])];
-  const evRow = new Map<string, number>();
-  // long lists of line references: the first 200, the rest are found by filtering the line sheet on this item's No.
-  const refList = (ids: (string | undefined)[], sheet: string) => { const u = [...new Set(ids.filter(Boolean))] as string[]; return u.length > 200 ? `${u.slice(0, 200).join(', ')} … and ${u.length - 200} more: filter ${sheet} on the Reconciling items column` : u.join(', '); };
-  const evLine = (ev: typeof rc.events[number]) => {
-    const row = items.length + 1; evRow.set(ev.id, row);
-    const adj = (h: HeadK) => (ev.affects ? N(-ev.effect[h]) : 0);
-    items.push([ev.id, ledgerLabel(ev.block), ev.affects ? 'Yes' : 'No', ev.explained ? 'Explained' : 'Unexplained', { v: ev.what, s: 'wrap' }, ev.months.map(ymLabel).join(', '), { v: ev.vouchers, s: 'wrap' },
-      ...HEAD_KEYS.map(h => (Math.abs(adj(h)) > 0.004 ? adj(h) : null)), { f: `SUM(H${row}:L${row})`, v: N(HEAD_KEYS.reduce((t, h) => t + adj(h), 0)) },
-      ev.affects ? null : ev.involved || null, { v: ev.action, s: 'wrap' }, ev.rows.join(', '),
-      { v: refList(ev.books.map(id => bref.get(id)), 'Books_Lines'), s: 'wrap' }, { v: refList(ev.portal.map(id => pref.get(id)), 'Portal_Lines'), s: 'wrap' }]);
+  const y = meta.year, it = meta.itc;
+  const blank = (n: number): C[] => Array(n).fill(0).map(() => ({ v: '', s: 'sec' } as C));
+  const sum = (a: Record<string, number>, ks: readonly string[]) => N(ks.reduce((t, k) => t + (a[k] || 0), 0));
+  // ---- Setup_Checks
+  const su: C[][] = [...title('Set-up checks: fix these first'), hdr(['Level', 'Issue', 'What to do'])];
+  for (const x of y.setup) su.push([{ v: x.level === 'fix' ? 'Fix first' : x.level === 'check' ? 'Check' : 'Note', s: x.level === 'fix' ? 'bad' : 'bold' }, { v: x.what, s: 'wrap' }, { v: x.action, s: 'wrap' }]);
+  if (!y.setup.length) su.push(['OK', 'All three portal ledgers are loaded, the openings are in, and every books line is in a flow row.']);
+
+  // ---- Year_Compare: formulas over the line sheets (column P = effect on the balance; Q block; R flow row code; books F / portal H = month compared)
+  const ms = r.months.filter(m => m >= meta.from && m <= meta.to);
+  const code = (k: string) => (k.includes(':') ? k.split(':')[1] : k);
+  const sumF = (sh: 'Books_Lines' | 'Portal_Lines', c: { block: Block; buckets: string[]; gsign: number }, month?: string) => {
+    const mc = sh === 'Books_Lines' ? 'F' : 'H', ic = sh === 'Books_Lines' ? 'G' : 'I';
+    const t = c.buckets.map(k => `SUMIFS(${sh}!$P:$P,${sh}!$Q:$Q,"${c.block}",${sh}!$R:$R,"${code(k)}",${sh}!$${ic}:$${ic},"in"${month ? `,${sh}!$${mc}:$${mc},"${month}"` : ''})`).join('+');
+    return c.gsign === 1 ? `(${t})` : `-(${t})`;
   };
-  rc.events.filter(e => e.affects).forEach(evLine);
-  const ne = rc.events.filter(e => !e.affects);
-  if (ne.length) { items.push([], [{ v: 'Differences that reversed within the period: no effect on the closing', s: 'sec' }, ...Array(17).fill(0).map(() => ({ v: '', s: 'sec' } as C))]); ne.forEach(evLine); }
-  items.push([], [{ v: 'Amounts are what to add to the closing as per books to reach the closing as per portal. Unexplained items are differences the records do not explain: correct the classification of the lines in the Loader, or the books / returns themselves.', s: 'note' }]);
-
-  // ---- Reconciliation: closing as per books → items → closing as per portal (formulas over the flow sheets and Recon_Items)
-  const rec: C[][] = [...title('Reconciliation: closing balance as per books to the GST portal'), hdr(['', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'Action', 'Item'])];
-  for (const st of rc.statements) {
-    const L = layout.find(x => x.block === st.block)!;
-    rec.push([{ v: ledgerLabel(st.block), s: 'sec' }, ...Array(8).fill(0).map(() => ({ v: '', s: 'sec' } as C))]);
-    const rb = rec.length + 1;
-    rec.push([{ v: 'Closing balance as per books', s: 'bold' }, ...HEAD_KEYS.map((h, i) => ({ f: `Flow_Books!${HC[i]}${L.close}`, v: N(st.books[h]), s: 'numB' } as C)), { f: `SUM(B${rb}:F${rb})`, v: N(HEAD_KEYS.reduce((t, h) => t + st.books[h], 0)), s: 'numB' }]);
-    const lr: number[] = [];
-    for (const ev of st.lines) {
-      const row = rec.length + 1, er = evRow.get(ev.id)!; lr.push(row);
-      rec.push([{ v: `${ev.explained ? '' : 'UNEXPLAINED: '}${ev.what}`, s: 'wrap' }, ...HEAD_KEYS.map(h => ({ f: `Recon_Items!${IH(h)}${er}`, v: N(-ev.effect[h]) } as C)), { f: `SUM(B${row}:F${row})`, v: N(HEAD_KEYS.reduce((t, h) => t - ev.effect[h], 0)) }, { v: ev.action, s: 'wrap' }, ev.id]);
+  const yc: C[][] = [...title('Year comparison: each movement as per books and as per portal'), hdr(['Movement', 'Books', 'Portal', 'Difference', 'Of which year-end cut-off', 'To look at', 'Where it is worked', 'What to do', ...ms.map(m => `${ymLabel(m)} diff`)])];
+  for (const b of BLOCKS) {
+    const cs = y.comps.filter(c => c.block === b); if (!cs.length) continue;
+    yc.push([{ v: BLOCK_NAME[b], s: 'sec' }, ...blank(7 + ms.length)]);
+    for (const c of cs) {
+      const row = yc.length + 1;
+      yc.push([c.label, { f: sumF('Books_Lines', c), v: sum(c.books, HEAD_KEYS) }, { f: sumF('Portal_Lines', c), v: sum(c.portal, HEAD_KEYS) }, { f: `B${row}-C${row}`, v: sum(c.diff, HEAD_KEYS), s: 'numB' },
+        sum(c.cutoff, HEAD_KEYS) || null, { f: `D${row}-E${row}`, v: sum(c.rest, HEAD_KEYS), s: 'numB' },
+        Math.abs(sum(c.diff, HEAD_KEYS)) > 0.5 ? (c.kind === 'journal' ? 'Journals' : c.kind === 'itc' ? 'ITC_3way' : c.kind === 'setup' ? 'Setup_Checks' : 'Invoice level') : 'Agrees',
+        { v: Math.abs(sum(c.diff, HEAD_KEYS)) > 0.5 ? c.action : '', s: 'wrap' },
+        ...c.months.map(x => ({ f: `${sumF('Books_Lines', c, ymLabel(x.m))}-${sumF('Portal_Lines', c, ymLabel(x.m))}`, v: x.d } as C))]);
     }
-    if (!st.lines.length) rec.push([{ v: 'No difference: books and portal agree.', s: 'note' }]);
-    const rp = rec.length + 1;
-    rec.push([{ v: 'Closing balance as per portal', s: 'bold' }, ...HEAD_KEYS.map((h, i) => ({ f: `Flow_Portal!${HC[i]}${L.close}`, v: N(st.portal[h]), s: 'numTot' } as C)), { f: `SUM(B${rp}:F${rp})`, v: N(HEAD_KEYS.reduce((t, h) => t + st.portal[h], 0)), s: 'numTot' }]);
-    const ru = rec.length + 1, led = ledgerLabel(st.block);
-    rec.push([{ v: 'Of which unexplained', s: 'note' }, ...HEAD_KEYS.map(h => ({ f: `SUMIFS(Recon_Items!$${IH(h)}:$${IH(h)},Recon_Items!$B:$B,"${led}",Recon_Items!$C:$C,"Yes",Recon_Items!$D:$D,"Unexplained")`, v: N(-st.unexplained[h]) } as C)), { f: `SUM(B${ru}:F${ru})`, v: N(-HEAD_KEYS.reduce((t, h) => t + st.unexplained[h], 0)) }]);
-    const rn = rec.length + 1;
-    rec.push([{ v: 'Not reconciled (should be nil)', s: 'note' }, ...HEAD_KEYS.map((h, i) => ({ f: `${HC[i]}${rb}${lr.map(x => `+${HC[i]}${x}`).join('')}-${HC[i]}${rp}`, v: N(st.gap[h]) } as C)), { f: `SUM(B${rn}:F${rn})`, v: N(HEAD_KEYS.reduce((t, h) => t + st.gap[h], 0)) }]);
-    rec.push([]);
+    yc.push([]);
   }
-  rec.push([{ v: `Differences that reversed within the period (timing between months, amounts shown net on the portal) do not change the closing: they are listed at the end of Recon_Items (${ne.length}).`, s: 'note' }]);
+  yc.push([{ v: 'Totals across tax heads. Flow_Difference and Month_wise show each head. The year-end cut-off is what was in the books in the period and on the portal in a later return (or the other way): it clears next period.', s: 'note' }]);
+
+  // ---- ITC_3way and ITC_Invoices
+  const HD = ['IGST', 'CGST', 'SGST', 'CESS'] as const;
+  const i3: C[][] = [[{ v: 'ITC: books, GSTR-2B and GSTR-3B', s: 'title' }], title('')[1], []];
+  const inv: C[][] = [...title('ITC: invoices that differ between books and GSTR-2B'), hdr(['Status', 'Supplier', 'GSTIN', 'Books no.', '2B no.', 'Books date', '2B date', '2B period', 'Tax in books', 'Tax in 2B', 'Difference', 'What to do'])];
+  if (!it) i3.push([{ v: 'No GSTR-2B files were loaded. Add the 2B JSONs of the period in the Loader to split the ITC difference invoice by invoice.', s: 'note' }]);
+  else {
+    const bridge = (t: string, ls: typeof it.books) => {
+      i3.push([{ v: t, s: 'sec' }, ...blank(6)], hdr(['', 'IGST', 'CGST', 'SGST', 'Cess', 'Total', 'What to do']));
+      for (const l of ls) {
+        if (!(l.kind === 'start' || l.kind === 'total') && !HD.some(h => Math.abs(l.amt[h]) > 0.5)) continue;
+        const row = i3.length + 1, st = l.kind === 'start' || l.kind === 'total' ? 'numTot' : l.kind === 'check' ? 'numB' : undefined;
+        i3.push([{ v: l.label, s: st ? 'bold' : 'wrap' }, ...HD.map(h => ({ v: N(l.amt[h]), s: st } as C)), { f: `SUM(B${row}:E${row})`, v: sum(l.amt, HD), s: st }, { v: l.action || '', s: 'wrap' }]);
+      }
+      i3.push([]);
+    };
+    bridge('Books to GSTR-2B (invoice by invoice: ITC_Invoices)', it.books);
+    bridge('GSTR-2B to GSTR-3B (claimed in the credit ledger)', it.claim);
+    i3.push([{ v: 'By month', s: 'sec' }, ...blank(6)], hdr(['Month', 'ITC booked', 'Available in 2B', 'Claimed in 3B', '2B − 3B', 'Running', '']));
+    for (const m of it.months) { const row = i3.length + 1; i3.push([ymLabel(m.m), m.booked, m.b2b, m.claimed, { f: `C${row}-D${row}`, v: m.diff, s: 'numB' }, { f: `F${row - 1}+E${row}`, v: m.run }]); }
+    for (const n of it.notes) i3.push([{ v: n, s: 'note' }]);
+    if (it.register) i3.push([], [{ v: `Purchase register cross-check: tax in the register ${it.register.register}, on the purchase invoices in the GL ${it.register.books}.`, s: 'note' }]);
+    for (const v of it.invoices) { const row = inv.length + 1; inv.push([v.status, v.supplier, v.gstin, v.bNo, v.rNo, v.bDate, v.rDate, v.period, v.bTax || null, v.rTax || null, { f: `I${row}-J${row}`, v: N(v.bTax - v.rTax) }, { v: v.note, s: 'wrap' }]); }
+    if (!it.invoices.length) inv.push(['Every purchase invoice in the books matches GSTR-2B.']);
+    if (it.nonInvoice.length) { inv.push([], [{ v: 'ITC entries without a purchase invoice (journals, adjustments)', s: 'sec' }, ...blank(11)], hdr(['Date', 'Voucher', 'Account', '', '', '', '', '', 'ITC', '', '', 'Books line'])); for (const n of it.nonInvoice) inv.push([n.date, n.voucher, n.account, '', '', '', '', '', n.tax, '', '', bref.get(n.id)]); }
+  }
+  // fix the first running cell of the month table (no row above to add to)
+  for (let i = 0; i < i3.length; i++) if (i3[i]?.[0] && (i3[i][0] as any).v === 'Month') { const f = i3[i + 1]?.[5] as any; if (f) f.f = `E${i + 2}`; }
+
+  // ---- Journals
+  const jr: C[][] = [...title('Suggested journals: books brought in line with the GST portal'), hdr(['No.', 'Date', 'Account', 'Head', 'Debit', 'Credit', 'Block', 'Effect on the block', 'Narration'])];
+  for (const j of y.journals) {
+    for (const [i, l] of j.legs.entries()) { const row = jr.length + 1; jr.push([j.no, { v: serial(j.date), s: 'date' }, l.existing ? l.account : `${l.account} (pick the account)`, l.head, l.dr || null, l.cr || null, l.block, l.block === 'other' ? null : { f: l.block === 'liab' ? `F${row}-E${row}` : `E${row}-F${row}`, v: N(l.block === 'liab' ? l.cr - l.dr : l.dr - l.cr) }, i === 0 ? { v: `${j.title}. ${j.narration}`, s: 'wrap' } : '']); }
+    jr.push([]);
+  }
+  if (!y.journals.length) jr.push(['None needed: set-off, payments and deposits agree with the portal.']);
+  jr.push([{ v: 'Nothing here is posted. Accounts marked "pick the account" are not in the books loaded: use your own ledger. Suspense lines show a set-off or payment the books do not have on both sides.', s: 'note' }]);
+
+  // ---- Closing: books + journals, the remaining differences, portal (formulas to the flow sheets and Journals)
+  const cl: C[][] = [...title('Closing statement: books to the GST portal'), hdr(['', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'What to do'])];
+  for (const c of y.closing) {
+    const L = layout.find(x => x.block === c.block)!;
+    cl.push([{ v: BLOCK_NAME[c.block], s: 'sec' }, ...blank(7)]);
+    const rb = cl.length + 1;
+    cl.push([{ v: 'Closing as per books', s: 'bold' }, ...HEAD_KEYS.map((h, i) => ({ f: `Flow_Books!${HC[i]}${L.close}`, v: N(c.books[h]), s: 'numB' } as C)), { f: `SUM(B${rb}:F${rb})`, v: sum(c.books, HEAD_KEYS), s: 'numB' }]);
+    const rj = cl.length + 1;
+    cl.push(['Add: suggested journals (Journals)', ...HEAD_KEYS.map(h => ({ f: `SUMIFS(Journals!$H:$H,Journals!$G:$G,"${c.block}",Journals!$D:$D,"${h}")`, v: N(c.journals[h]) } as C)), { f: `SUM(B${rj}:F${rj})`, v: sum(c.journals, HEAD_KEYS) }]);
+    const ra = cl.length + 1;
+    cl.push([{ v: 'Adjusted closing as per books', s: 'bold' }, ...HEAD_KEYS.map((h, i) => ({ f: `${HC[i]}${rb}+${HC[i]}${rj}`, v: N(c.adjusted[h]), s: 'numTot' } as C)), { f: `SUM(B${ra}:F${ra})`, v: sum(c.adjusted, HEAD_KEYS), s: 'numTot' }]);
+    const lr: number[] = [];
+    for (const l of c.lines) { const row = cl.length + 1; lr.push(row); cl.push([{ v: `${l.kind === 'unexplained' ? 'NOT EXPLAINED: ' : 'Less: '}${l.label}`, s: 'wrap' }, ...HEAD_KEYS.map(h => N(l.amt[h]) || null), { f: `SUM(B${row}:F${row})`, v: sum(l.amt, HEAD_KEYS) }, { v: l.action, s: 'wrap' }]); }
+    const rp = cl.length + 1;
+    cl.push([{ v: 'Closing as per portal', s: 'bold' }, ...HEAD_KEYS.map((h, i) => ({ f: `Flow_Portal!${HC[i]}${L.close}`, v: N(c.portal[h]), s: 'numTot' } as C)), { f: `SUM(B${rp}:F${rp})`, v: sum(c.portal, HEAD_KEYS), s: 'numTot' }]);
+    const rc = cl.length + 1;
+    cl.push([{ v: 'Check (should be nil)', s: 'note' }, ...HEAD_KEYS.map((h, i) => ({ f: `${HC[i]}${ra}${lr.map(x => `-${HC[i]}${x}`).join('')}-${HC[i]}${rp}`, v: 0 } as C)), { f: `SUM(B${rc}:F${rc})`, v: 0 }]);
+    cl.push([]);
+  }
+  cl.push([{ v: 'Lines are differences between the adjusted books and the portal: positive means the books are higher. A line in the Total column only, with nil total, is a books account not split by tax head.', s: 'note' }]);
   // ---- Cross_Checks
   const chk: C[][] = [...title('Cross-checks between the portal ledgers and with GSTR-3B'), hdr(['Check', 'Return period', 'Head', 'A', 'Amount A', 'B', 'Amount B', 'Difference', 'Status', 'Detail'])];
   r.checks.forEach((c, i) => { const row = BL_H + 1 + i; chk.push([c.area, ymLabel(c.period), c.head, c.aLabel, c.a, c.bLabel, c.b, { f: `E${row}-G${row}`, v: c.diff }, { f: `IF(ABS(H${row})<=1,"OK","Check")`, v: c.ok ? 'OK' : 'Check', s: c.ok ? 'ok' : 'bad' }, c.note || '']); });
@@ -174,12 +220,15 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
     [{ v: 'How to read this workbook', s: 'sec' }, { v: '', s: 'sec' }],
     ['Flow_Books', 'Opening, movements and closing of input tax credit, tax liability, the electronic cash ledger and interest / fees, from the books only.'],
     ['Flow_Portal', 'The same rows from the portal ledgers only (credit ledger, cash ledger, liability register), by return period.'],
-    ['Reconciliation', 'For each ledger: closing balance as per books, each reconciling item, closing balance as per portal. "Not reconciled" must be nil; "Of which unexplained" shows what the records do not explain.'],
+    ['Setup_Checks', 'Fix these first: a missing portal ledger, a missing opening balance or a books line not placed in a flow row shows up as a difference everywhere else.'],
+    ['Year_Compare', 'Each movement for the year as per books and as per portal, the year-end cut-off, what is left to look at, and the difference month by month (formulas over the line sheets).'],
+    ['ITC_3way', 'ITC as per books, GSTR-2B and GSTR-3B: books to 2B invoice by invoice, 2B to 3B month by month. ITC_Invoices lists the invoices that differ.'],
+    ['Journals', 'Suggested entries that bring set-off, payments and deposits in the books in line with the portal. Nothing is posted: review them and post them in the books.'],
+    ['Closing', 'For each ledger: closing as per books, add the journals, the remaining differences line by line, closing as per portal. "Check" must be nil.'],
     ['Flow_Difference', 'Books minus portal, row by row.'],
-    ['Recon_Items', 'One row per reconciling item, worked out from the records: what happened, the vouchers, the amount by tax head and what to do. Items that reversed within the period (no effect on the closing) are at the end.'],
     ['Cross_Checks', 'The portal ledgers against each other (cash ledger vs liability paid in cash; credit ledger vs liability paid by ITC) and against GSTR-3B where its PDFs were loaded.'],
     ['Month_wise', 'Books, portal and difference for each row, head and month.'],
-    ['Books_Lines / Portal_Lines', 'Every input line with its flow row, how it was classified and the reconciling items it belongs to. All the figures above are SUMIFS over these sheets.'],
+    ['Books_Lines / Portal_Lines', 'Every input line with its flow row, and how it was classified. All the figures above are SUMIFS over these sheets.'],
     ['Balances', 'Opening balances: entered, printed in the files, or carried from entries before the period.'],
     ['Audit', 'Every change you made in the Loader, with your remark.'], [],
     [{ v: 'Basis', s: 'sec' }, { v: '', s: 'sec' }],
@@ -190,15 +239,19 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   ];
   const sheets: SheetSpec[] = [
     { name: 'Read Me', rows: rm, widths: [28, 120] },
-    { name: 'Reconciliation', rows: rec, widths: [70, 14, 14, 14, 12, 14, 14, 60, 6], freeze: { row: BL_H, col: 1 }, tab: '2C388E' },
+    { name: 'Setup_Checks', rows: su, widths: [12, 90, 80], freeze: { row: BL_H } },
+    { name: 'Year_Compare', rows: yc, widths: [52, 15, 15, 15, 15, 15, 16, 60, ...ms.map(() => 12)], freeze: { row: BL_H, col: 1 }, tab: '2C388E' },
+    { name: 'ITC_3way', rows: i3, widths: [70, 14, 14, 14, 12, 14, 70], freeze: { row: 3 }, tab: '2C388E' },
+    { name: 'ITC_Invoices', rows: inv, widths: [22, 32, 18, 18, 18, 11, 11, 10, 14, 14, 14, 80], freeze: { row: BL_H }, filter: { row: BL_H, cols: 12 } },
+    { name: 'Journals', rows: jr, widths: [6, 11, 40, 8, 14, 14, 8, 14, 90], freeze: { row: BL_H } },
+    { name: 'Closing', rows: cl, widths: [70, 14, 14, 14, 12, 14, 14, 70], freeze: { row: BL_H, col: 1 }, tab: '2C388E' },
     { name: 'Flow_Books', rows: fBooks, widths: [52, 16, 16, 16, 16, 18, 18, 14], freeze: { row: 5, col: 1 }, tab: '2C388E' },
     { name: 'Flow_Portal', rows: fPortal, widths: [52, 16, 16, 16, 16, 18, 18, 14], freeze: { row: 5, col: 1 }, tab: '2C388E' },
     { name: 'Flow_Difference', rows: fDiff, widths: [70, 16, 16, 16, 16, 18, 18, 16], freeze: { row: 5, col: 1 }, tab: '2C388E' },
-    { name: 'Recon_Items', rows: items, widths: [6, 20, 9, 12, 60, 16, 44, 13, 13, 13, 11, 14, 14, 16, 50, 26, 30, 30], freeze: { row: BL_H, col: 1 }, filter: { row: BL_H, cols: 18 } },
     { name: 'Cross_Checks', rows: chk, widths: [44, 12, 8, 30, 15, 32, 15, 14, 9, 80], freeze: { row: BL_H }, filter: { row: BL_H, cols: 10 } },
     { name: 'Month_wise', rows: mw, widths: [24, 36, 8, ...r.months.flatMap(() => [13, 13, 13]), 14], freeze: { row: BL_H, col: 3 } },
-    { name: 'Books_Lines', rows: books, widths: [10, 26, 6, 11, 8, 12, 8, 14, 14, 30, 26, 22, 7, 13, 13, 13, 6, 14, 30, 13, 40, 14, 40], freeze: { row: BL_H, col: 1 }, filter: { row: BL_H, cols: 23 } },
-    { name: 'Portal_Lines', rows: portal, widths: [10, 26, 26, 6, 11, 20, 10, 10, 8, 32, 6, 8, 7, 9, 13, 13, 6, 14, 30, 13, 14], freeze: { row: BL_H, col: 1 }, filter: { row: BL_H, cols: 21 } },
+    { name: 'Books_Lines', rows: books, widths: [10, 26, 6, 11, 8, 12, 8, 14, 14, 30, 26, 22, 7, 13, 13, 13, 6, 14, 30, 13, 40, 40], freeze: { row: BL_H, col: 1 }, filter: { row: BL_H, cols: 22 } },
+    { name: 'Portal_Lines', rows: portal, widths: [10, 26, 26, 6, 11, 20, 10, 10, 8, 32, 6, 8, 7, 9, 13, 13, 6, 14, 30, 13], freeze: { row: BL_H, col: 1 }, filter: { row: BL_H, cols: 20 } },
     { name: 'Balances', rows: bal, widths: [8, 6, 8, 34, 50, 18, 16], freeze: { row: BL_H } },
     { name: 'Audit', rows: au, widths: [18, 26, 40, 24, 24, 60], freeze: { row: BL_H } },
   ];

@@ -12,6 +12,11 @@ Planted differences (what the reasons engine must find):
   8. Mar-26: an invoice with IGST 5,000 booked in Mar, claimed in the Apr-26 return (after the period).
   9. A Purchase Order with GST lines (non-accounting, must be ignored).
   10. Mar-26 cash deposit made on 20-Apr-26: in books after the period, on the portal for the Mar-26 return.
+GSTR-2B (demo_2b_MMYYYY.json, Apr-25 .. Apr-26), for the three-way ITC check (books vs 2B vs 3B):
+  a. Jan-26: the Kerala Supplier invoice is missing from 2B (supplier did not file) but was claimed in 3B.
+  b. Oct-25: an invoice of Kochi Packaging (CGST 450 + SGST 450) is in 2B, not in books and not claimed.
+  c. Jul-25: the extra Kerala invoice is in the Jul 2B; it was claimed in the Aug return (3 above).
+  d. Mar-26: the Mumbai invoice (IGST 12,200) is in the Mar 2B; 5,000 of it was claimed in Apr-26 (8 above).
 Run: python3 make_ledger_fixtures.py  (writes the files next to this script)
 """
 import csv, datetime as dt, itertools, os
@@ -129,10 +134,12 @@ write_csv('demo_cash_ledger.csv', rows)
 wb = Workbook(); ws = wb.active; ws.title = 'Sheet1'
 ws.append(['voucher_id', 'vch_type', 'vch_key', 'date', 'vouchernumber', 'reference', 'partyname', 'gl_account', 'stockitemname', 'rate', 'actualqty', 'billedqty', 'cost_centre', 'cost_centre_global', 'amount', 'narration'])
 n = [0]
-def vch(vt, d, party, lines, narr=None):
+b2b = {}  # (y, m) of the 2B -> list of (gstin, name, inv no, date, taxable, igst, cgst, sgst)
+SUP = {'Kerala Supplier Pvt Ltd': '32AABCK1111L1Z1', 'Mumbai Supplier Pvt Ltd': '27AABCM2222M1Z2', 'Kochi Packaging': '32AAFCK3333N1Z3'}
+def vch(vt, d, party, lines, narr=None, ref=None):
     """lines: (ledger, amount) with Dr negative, as Tally exports"""
     n[0] += 1; vid = f'demo-{n[0]:05d}'
-    for led, a in lines: ws.append([vid, vt, vid + ':1', dt.datetime(d.year, d.month, d.day), f'{vt[:3].upper()}/{n[0]:04d}', None, party, led, None, None, None, None, None, None, a, narr])
+    for led, a in lines: ws.append([vid, vt, vid + ':1', dt.datetime(d.year, d.month, d.day), f'{vt[:3].upper()}/{n[0]:04d}', ref, party, led, None, None, None, None, None, None, a, narr])
     ws.append([None] * 16)
 IN = {'IGST': 'Input IGST', 'CGST': 'Input CGST', 'SGST': 'Input SGST'}
 OUTL = {'IGST': 'Output IGST', 'CGST': 'Output CGST 9%', 'SGST': 'Output SGST 9%'}
@@ -149,10 +156,17 @@ for (y, m) in months[:-1]:  # Apr-25 .. Mar-26
         vch('Sales', d15 + dt.timedelta(days=5), 'Walk-in Customer', [('Walk-in Customer', -3933.33), ('Local Sales 18%', 3333.33), (OUTL['CGST'], 300), (OUTL['SGST'], 300)])  # 6.
     # purchases
     c = 5400 + (1000 if (y, m) == (2025, 7) else 0)
-    vch('Purchase', d15, 'Kerala Supplier Pvt Ltd', [('Kerala Supplier Pvt Ltd', round(c / 0.09 + 2 * c, 2)), ('Local Purchases 18%', -round(c / 0.09, 2)), (IN['CGST'], -c), (IN['SGST'], -c)])
+    kref = f'KS/{y % 100}{m:02d}/{m:03d}'
+    vch('Purchase', d15, 'Kerala Supplier Pvt Ltd', [('Kerala Supplier Pvt Ltd', round(c / 0.09 + 2 * c, 2)), ('Local Purchases 18%', -round(c / 0.09, 2)), (IN['CGST'], -c), (IN['SGST'], -c)], ref=kref)
+    if (y, m) != (2026, 1):  # a. missing from 2B
+        b2b.setdefault((y, m), []).append(('Kerala Supplier Pvt Ltd', kref, d15, round(c / 0.09, 2), 0, c, c))
     if (y, m) == (2025, 8): pass  # the Aug return claimed the Jul invoice: books already have it in Jul
     ig = (12000 if (y, m) == (2025, 12) else 7200) + (5000 if (y, m) == (2026, 3) else 0)
-    vch('Purchase', d15, 'Mumbai Supplier Pvt Ltd', [('Mumbai Supplier Pvt Ltd', round(ig / 0.18 + ig, 2)), ('Interstate Purchases 18%', -round(ig / 0.18, 2)), (IN['IGST'], -ig)])
+    mref = f'MS-{y}-{m:02d}-77'
+    vch('Purchase', d15, 'Mumbai Supplier Pvt Ltd', [('Mumbai Supplier Pvt Ltd', round(ig / 0.18 + ig, 2)), ('Interstate Purchases 18%', -round(ig / 0.18, 2)), (IN['IGST'], -ig)], ref=mref)
+    b2b.setdefault((y, m), []).append(('Mumbai Supplier Pvt Ltd', mref, d15, round(ig / 0.18, 2), ig, 0, 0))
+    if (y, m) == (2025, 10):  # b. in 2B only
+        b2b.setdefault((y, m), []).append(('Kochi Packaging', 'KP/889', dt.date(2025, 10, 22), 5000, 0, 450, 450))
     if (y, m) == (2025, 6):
         vch('Journal', eom, '', [('Staff Welfare Expenses', -2000), (IN['CGST'], 1000), (IN['SGST'], 1000)], 'ITC reversed: blocked credit u/s 17(5)')  # 2.
     if (y, m) == (2025, 5):
@@ -172,4 +186,15 @@ for (y, m) in months[:-1]:  # Apr-25 .. Mar-26
         vch('Payment', fd, 'HDFC Bank', [('GST Electronic Cash Ledger', -tot), ('HDFC Bank', tot)], f'GST challan {lbl(y, m)}')
         vch('Journal', eom, '', [(OUTL[h], -(paid[h] + f.get(h, 0))) for h in paid if paid[h] + f.get(h, 0)] + [('GST Electronic Cash Ledger', tot)], f'GST paid in cash {lbl(y, m)}')  # 5. fee debited to output
 wb.save(os.path.join(OUT, 'demo_tally_gl_dump.xlsx'))
+
+# ---- GSTR-2B JSON per month (portal download layout: data.rtnprd, data.docdata.b2b[].inv[])
+import json
+for (y, m) in months:
+    docs = {}
+    for name, no, d, txval, ig, cg, sg in b2b.get((y, m), []):
+        docs.setdefault(name, []).append({'inum': no, 'dt': d.strftime('%d-%m-%Y'), 'val': round(txval + ig + cg + sg, 2), 'typ': 'R', 'pos': GSTIN[:2], 'rev': 'N', 'itcavl': 'Y', 'rsn': '',
+                                          'items': [{'num': 1, 'rt': 18, 'txval': txval, 'igst': ig, 'cgst': cg, 'sgst': sg, 'cess': 0}], 'txval': txval, 'igst': ig, 'cgst': cg, 'sgst': sg, 'cess': 0})
+    j = {'chksum': 'demo', 'data': {'gstin': GSTIN, 'rtnprd': f'{m:02d}{y}', 'version': '1.0', 'gendt': f'14-{nxt(y, m)[1]:02d}-{nxt(y, m)[0]}',
+         'docdata': {'b2b': [{'ctin': SUP[k], 'trdnm': k, 'supfildt': '11-01-2026', 'supprd': f'{m:02d}{y}', 'inv': v} for k, v in docs.items()]}}}
+    with open(os.path.join(OUT, f'demo_2b_{m:02d}{y}.json'), 'w') as f: json.dump(j, f, indent=1)
 print('written to', OUT)

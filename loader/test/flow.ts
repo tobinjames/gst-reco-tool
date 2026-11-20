@@ -60,21 +60,45 @@ const nov = r.books.filter(e => un[0].books.includes(e.id) && e.head !== 'ALL');
 const r2 = run({ ...inp, overrides: Object.fromEntries(nov.map(e => [e.id, { period: '2025-12' }])) });
 assert.ok(r2.items.some(i => !i.explained && i.months.includes('2025-12')), 'a changed period is still checked against the portal');
 
-// reconciliation statement: books closing + items = portal closing, one line per real event
-import { reconcile } from '../src/flow/recon';
-const rc = reconcile(r);
-for (const s of rc.statements) for (const h of HEAD_KEYS) assert.ok(Math.abs(s.gap[h]) < 0.01, `${s.block} ${h} reconciles to the portal`);
-const st = (b: string) => rc.statements.find(s => s.block === b)!;
-assert.deepEqual(st('itc').lines.map(e => e.category), ['Opening balance', 'After the period', 'Tax head'], 'ITC: opening, Mar ITC claimed in Apr, cross-utilisation');
-assert.deepEqual(st('liab').lines.map(e => [e.category, e.explained]), [['Tax head', true], ['Fee booked to tax', true], ['Amount differs', false]], 'liability: wrong head, late fee, unreported Nov sale');
-assert.deepEqual(st('cash').lines.map(e => e.category), ['After the period'], 'cash: challan paid after the period');
-// opening differences in every ledger stay in their own statement (they once merged into the ITC one)
-const rcO = reconcile(run({ ...inp, bal: { ...inp.bal, portal: { liability: { CGST: { opening: 700 } }, cash: { IGST: { opening: 450 } } } } }));
-for (const s of rcO.statements) for (const h of HEAD_KEYS) assert.ok(Math.abs(s.gap[h]) < 0.01, `with openings everywhere: ${s.block} ${h} reconciles (gap ${s.gap[h]})`);
-assert.deepEqual(rcO.statements.map(s => s.lines.filter(e => e.category === 'Opening balance').length), [1, 1, 1], 'one opening line per ledger');
-const netted = rc.noEffect.filter(e => e.category === 'Netted on portal');
-assert.equal(netted.length, 1, 'the June reversal is one event, not two rows');
-assert.ok(rc.noEffect.every(e => HEAD_KEYS.every(h => Math.abs(e.effect[h]) < 0.005)), 'no-effect events do not move the closing');
+// year view: comparison per movement, suggested journals, closing statement
+import { yearRecon } from '../src/flow/year';
+import { itcThreeWay } from '../src/flow/itc3';
+import { process2b } from '../src/gstr2b';
+import { readdirSync } from 'fs';
+const y = yearRecon(r, inp, { has2b: true });
+const comp = (id: string) => y.comps.find(c => c.id === id)!;
+const nzH = (a: any) => Object.fromEntries(HEAD_KEYS.filter(h => Math.abs(a[h]) > 0.004).map(h => [h, a[h]]));
+assert.deepEqual(nzH(comp('itc_setoff').rest), { IGST: -3000, CGST: 3000 }, 'set-off: IGST used on the portal, CGST in books');
+assert.deepEqual(nzH(comp('itc_net').cutoff), { IGST: 5000 }, 'Mar ITC claimed in Apr-26 is a cut-off');
+assert.deepEqual(comp('itc_net').months.filter(m => m.any).map(m => m.m), ['2025-07', '2025-08', '2026-03'], 'ITC: the Jul / Aug timing and the Mar cut-off show in its months');
+assert.equal(comp('itc_net').months.find(m => m.m === '2025-08')!.run, 0, 'and clears by August');
+const j1 = y.journals.find(j => j.comps.includes('itc_setoff'))!;
+assert.deepEqual(j1.legs.map(l => [l.account, l.head, l.dr, l.cr]), [['Input CGST', 'CGST', 3000, 0], ['Input IGST', 'IGST', 0, 3000]], 'J1: set-off journal');
+const j2 = y.journals.find(j => j.comps.includes('paid_cash'))!;
+assert.deepEqual(j2.legs.map(l => [l.head, l.dr, l.cr]), [['ALL', 100, 0], ['CGST', 0, 50], ['SGST', 0, 50]], 'J2: late fee booked to tax');
+for (const c of y.closing) for (const h of HEAD_KEYS) assert.ok(Math.abs(c.diff[h] - c.lines.reduce((s, l) => s + l.amt[h], 0)) < 0.01, `closing ${c.block} ${h}: lines explain adjusted books − portal`);
+const cl = (b: string) => y.closing.find(c => c.block === b)!;
+assert.deepEqual(cl('itc').lines.map(l => [l.kind, nzH(l.amt)]), [['opening', { CGST: 500 }], ['cutoff', { IGST: 5000 }]], 'ITC closing: opening and cut-off (set-off cleared by J1)');
+assert.deepEqual(cl('liab').lines.map(l => [l.kind, nzH(l.amt)]), [['comp', { IGST: 1800, CGST: -600, SGST: -600 }]], 'liability closing: output tax (wrong head + Nov sale)');
+assert.deepEqual(cl('cash').lines.map(l => [l.kind, nzH(l.amt)]), [['cutoff', { ALL: -9000 }]], 'cash closing: challan paid after the period');
+assert.ok(!y.closing.some(c => c.lines.some(l => l.kind === 'unexplained')), 'nothing left unexplained on the demo');
+// openings in every ledger stay in their own closing statement
+const yO = yearRecon(run({ ...inp, bal: { ...inp.bal, portal: { liability: { CGST: { opening: 700 } }, cash: { IGST: { opening: 450 } } } } }), inp, { has2b: true });
+assert.deepEqual(yO.closing.map(c => c.lines.filter(l => l.kind === 'opening').length), [1, 1, 1], 'one opening line per ledger');
+// ITC three ways on the demo GSTR-2B
+const D2 = new URL('./fixtures/ledgers/', import.meta.url);
+const f2b = readdirSync(D2).filter(f => f.startsWith('demo_2b_')).map(f => ({ name: f, json: JSON.parse(readFileSync(new URL(f, D2), 'utf8')) }));
+const raw = process2b(f2b, '2025-26', '2024-25', '2026-27', []).rows.map(x => [x.key || null, ...x.amt, ...x.info]);
+const i3 = itcThreeWay(r, inp, raw);
+const bl = (t: string) => i3.books.find(l => l.label.startsWith(t))!;
+assert.deepEqual(nzH(bl('Less: invoices in books, not in 2B').amt), { CGST: -5400, SGST: -5400 }, 'a. Jan Kerala invoice claimed, not in 2B');
+assert.deepEqual(nzH(bl('Add: invoices in 2B, not in books').amt), { CGST: 450, SGST: 450 }, 'b. Kochi Packaging KP/889 in 2B only');
+assert.deepEqual(i3.invoices.map(v => [v.status, v.bNo || v.rNo]), [['In books, not in 2B', 'KS/2601/001'], ['In 2B, not in books', 'KP/889']], 'only the two planted invoices differ');
+const mo = (m: string) => i3.months.find(x => x.m === m)!;
+assert.deepEqual([mo('2025-07').diff, mo('2025-08').diff], [2000, -2000], 'c. Jul 2B invoice claimed in Aug');
+assert.equal(mo('2026-03').diff, 5000, 'd. Mar 2B: 5,000 claimed in Apr-26');
+assert.equal(mo('2026-01').diff, -10800, 'a. Jan: claimed beyond 2B');
+assert.deepEqual(nzH(i3.claim[2].amt), { IGST: 5000, CGST: -3950, SGST: -3950 }, '2B − 3B for the year');
 
 const fmt = (x: number) => x.toFixed(2).padStart(12);
 if (process.env.SHOW) {
@@ -98,5 +122,5 @@ console.log('flow: all checks passed', r.items.length, 'items');
 import { flowWorkbook } from '../src/flow/workbook';
 import { writeFileSync } from 'fs';
 const wbBytes = await flowWorkbook(r, { gstin: '32AAACJ1234K1Z5', legalName: 'DEMO TRADERS PRIVATE LIMITED', fy: '2025-26', from: '2025-04', to: '2026-03', builtAt: '20-11-2026', audit: [],
-  files: [{ name: 'demo_credit_ledger.csv', kind: 'Electronic Credit Ledger', note: '' }] });
+  files: [{ name: 'demo_credit_ledger.csv', kind: 'Electronic Credit Ledger', note: '' }], year: y, itc: i3 });
 if (process.env.OUT) { writeFileSync(process.env.OUT, wbBytes); console.log('workbook written to', process.env.OUT); }

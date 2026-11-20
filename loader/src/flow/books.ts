@@ -25,7 +25,7 @@ function layoutOf(rows: any[][]): Layout | null {
     const H = (rows[i] || []).map(key);
     const at = (...names: string[]) => H.findIndex(h => names.includes(h));
     if (at('gl account', 'gl_account', 'ledger name', 'ledgername') >= 0 && at('amount') >= 0 && at('vch type', 'vch_type', 'voucher type', 'vouchertypename') >= 0)
-      return { fmt: 'tally-dump', header: i, col: { account: at('gl account', 'ledger name', 'ledgername'), amount: at('amount'), vchType: at('vch type', 'voucher type', 'vouchertypename'), vkey: at('voucher id', 'vch key', 'voucher key', 'masterid', 'guid'), date: at('date'), vchNo: at('vouchernumber', 'voucher number', 'vch no', 'voucher no'), party: at('partyname', 'party name', 'party ledger name'), narration: at('narration') } };
+      return { fmt: 'tally-dump', header: i, col: { account: at('gl account', 'ledger name', 'ledgername'), amount: at('amount'), vchType: at('vch type', 'voucher type', 'vouchertypename'), vkey: at('voucher id', 'vch key', 'voucher key', 'masterid', 'guid'), date: at('date'), vchNo: at('vouchernumber', 'voucher number', 'vch no', 'voucher no'), party: at('partyname', 'party name', 'party ledger name'), narration: at('narration'), ref: at('reference', 'supplier invoice no', 'bill no') } };
     if (at('account name', 'account_name') >= 0 && at('debit') >= 0 && at('credit') >= 0)
       return { fmt: 'zoho-gl', header: i, col: { account: at('account name'), debit: at('debit'), credit: at('credit'), vchType: at('transaction type'), vkey: at('transaction id'), date: at('date'), vchNo: at('entity number', 'transaction number', 'transaction#'), party: at('transaction details', 'contact name'), narration: at('description', 'notes'), group: at('account type'), ref: at('reference number') } };
     const d = at('date', 'voucher date', 'txn date', 'transaction date'), dr = H.findIndex(h => /^(debit|dr)( amount)?$/.test(h)), cr = H.findIndex(h => /^(credit|cr)( amount)?$/.test(h));
@@ -59,13 +59,13 @@ export function parseBooks(name: string, rows: any[][], ledgerName?: string): Bo
       const date = ddmmyyyy(g(r, 'date'));
       if (!date) { skip('no date'); continue; }
       out.lines.push({ file: name, row: i + 1, vkey: txt(g(r, 'vkey')) || `${date}|${txt(g(r, 'vchNo'))}|${vt}`, date, vchType: vt, vchNo: txt(g(r, 'vchNo')), party: txt(g(r, 'party')), account: acc, narration: txt(g(r, 'narration')),
-        dr: a < 0 ? r2(-a) : 0, cr: a > 0 ? r2(a) : 0, accGroup: '' });
+        dr: a < 0 ? r2(-a) : 0, cr: a > 0 ? r2(a) : 0, accGroup: '', ref: txt(g(r, 'ref')) || undefined });
     } else if (fmt === 'zoho-gl') {
       const acc = txt(g(r, 'account')); if (!acc) continue;
       const date = ddmmyyyy(g(r, 'date')); if (!date) { skip('no date'); continue; }
       const dr = num(g(r, 'debit')), cr = num(g(r, 'credit'));
       out.lines.push({ file: name, row: i + 1, vkey: txt(g(r, 'vkey')) || `${date}|${txt(g(r, 'vchNo'))}`, date, vchType: txt(g(r, 'vchType')), vchNo: txt(g(r, 'vchNo')), party: txt(g(r, 'party')), account: acc, narration: txt(g(r, 'narration')),
-        dr: r2(dr), cr: r2(cr), accGroup: low(g(r, 'group')) });
+        dr: r2(dr), cr: r2(cr), accGroup: low(g(r, 'group')), ref: txt(g(r, 'ref')) || undefined });
     } else {
       const part = txt(g(r, 'party')), dr = num(g(r, 'debit')), cr = num(g(r, 'credit'));
       if (/^opening balance/i.test(part) || /^opening balance/i.test(txt(r.join(' ')).slice(0, 40))) { out.opening = r2(dr - cr); continue; }
