@@ -101,22 +101,26 @@ def recon_sheet(name, sub, headers, widths, num_cols, summary=None, start=16):
 
 def status_summary(statuses, status_col, sum_cols, labels):
     def f(ws):
-        cell(ws, 'A4', 'Status', f_hdr, fill_hdr, align=center)
-        cell(ws, 'B4', 'Count', f_hdr, fill_hdr, align=center)
+        # the summary must end above the table header (row 15): with 10 statuses it starts on row 3 and the sheet note moves beside the title
+        top = 4 if len(statuses) <= 9 else 3
+        if top == 3:
+            ws['C2'] = ws['A3'].value; ws['C2'].font = f_sub; ws['A3'] = None
+        cell(ws, f'A{top}', 'Status', f_hdr, fill_hdr, align=center)
+        cell(ws, f'B{top}', 'Count', f_hdr, fill_hdr, align=center)
         for j, lab in enumerate(labels):
-            cell(ws, f'{CL(3 + j)}4', lab, f_hdr, fill_hdr, align=center)
+            cell(ws, f'{CL(3 + j)}{top}', lab, f_hdr, fill_hdr, align=center)
         for i, st in enumerate(statuses):
-            r = 5 + i
+            r = top + 1 + i
             cell(ws, f'A{r}', st, f_bold if i == 0 else f_norm)
             cell(ws, f'B{r}', f'=COUNTIF(${status_col}$16:${status_col}${NREC},A{r})', fmt='#,##0')
             for j, sc in enumerate(sum_cols):
                 cell(ws, f'{CL(3 + j)}{r}', f'=SUMIF(${status_col}$16:${status_col}${NREC},$A{r},${sc}$16:${sc}${NREC})', fmt=NUM)
-        r = 5 + len(statuses)
+        r = top + 1 + len(statuses)
         cell(ws, f'A{r}', 'Total', f_bold, fill_sub)
-        cell(ws, f'B{r}', f'=SUM(B5:B{r - 1})', f_bold, fill_sub, '#,##0')
+        cell(ws, f'B{r}', f'=SUM(B{top + 1}:B{r - 1})', f_bold, fill_sub, '#,##0')
         for j in range(len(sum_cols)):
             col = CL(3 + j)
-            cell(ws, f'{col}{r}', f'=SUM({col}5:{col}{r - 1})', f_bold, fill_sub, NUM)
+            cell(ws, f'{col}{r}', f'=SUM({col}{top + 1}:{col}{r - 1})', f_bold, fill_sub, NUM)
         ws.column_dimensions['A'].width = max(ws.column_dimensions['A'].width or 0, 34)
     return f
 
@@ -213,9 +217,9 @@ cell(ws, f'C{r1}', 'Count', f_hdr, fill_hdr, align=center)
 cell(ws, f'D{r1}', 'Diff tax (books - 2B)', f_hdr, fill_hdr, align=center)
 for i in range(len(P_STATUS)):
     r = r1 + 1 + i
-    cell(ws, f'B{r}', f'=Recon_Purchases!A{5 + i}', f_link)
-    cell(ws, f'C{r}', f'=Recon_Purchases!B{5 + i}', f_link, fmt='#,##0')
-    cell(ws, f'D{r}', f'=Recon_Purchases!F{5 + i}', f_link, fmt=NUM)
+    cell(ws, f'B{r}', f'=Recon_Purchases!A{4 + i}', f_link)
+    cell(ws, f'C{r}', f'=Recon_Purchases!B{4 + i}', f_link, fmt='#,##0')
+    cell(ws, f'D{r}', f'=Recon_Purchases!F{4 + i}', f_link, fmt=NUM)
 r2 = r1 + len(P_STATUS) + 2
 notes = ['How to use: drop the 2B JSON(s) and the purchase register into the Loader (Monthly ITC reconciliation), map the columns, build.',
          'Manual match: give rows that belong together the same Match code in Recon_Purchases, save, and drop this workbook into the Loader with the same files.',

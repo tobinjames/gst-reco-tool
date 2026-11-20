@@ -1,0 +1,81 @@
+{
+ "chksum": "demo",
+ "data": {
+  "gstin": "32AAACJ1234K1Z5",
+  "rtnprd": "112025",
+  "version": "1.0",
+  "gendt": "14-12-2025",
+  "docdata": {
+   "b2b": [
+    {
+     "ctin": "32AABCK1111L1Z1",
+     "trdnm": "Kerala Supplier Pvt Ltd",
+     "supfildt": "11-01-2026",
+     "supprd": "112025",
+     "inv": [
+      {
+       "inum": "KS/2511/011",
+       "dt": "15-11-2025",
+       "val": 70800.0,
+       "typ": "R",
+       "pos": "32",
+       "rev": "N",
+       "itcavl": "Y",
+       "rsn": "",
+       "items": [
+        {
+         "num": 1,
+         "rt": 18,
+         "txval": 60000.0,
+         "igst": 0,
+         "cgst": 5400,
+         "sgst": 5400,
+         "cess": 0
+        }
+       ],
+       "txval": 60000.0,
+       "igst": 0,
+       "cgst": 5400,
+       "sgst": 5400,
+       "cess": 0
+      }
+     ]
+    },
+    {
+     "ctin": "27AABCM2222M1Z2",
+     "trdnm": "Mumbai Supplier Pvt Ltd",
+     "supfildt": "11-01-2026",
+     "supprd": "112025",
+     "inv": [
+      {
+       "inum": "MS-2025-11-77",
+       "dt": "15-11-2025",
+       "val": 47200.0,
+       "typ": "R",
+       "pos": "32",
+       "rev": "N",
+       "itcavl": "Y",
+       "rsn": "",
+       "items": [
+        {
+         "num": 1,
+         "rt": 18,
+         "txval": 40000.0,
+         "igst": 7200,
+         "cgst": 0,
+         "sgst": 0,
+         "cess": 0
+        }
+       ],
+       "txval": 40000.0,
+       "igst": 7200,
+       "cgst": 0,
+       "sgst": 0,
+       "cess": 0
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

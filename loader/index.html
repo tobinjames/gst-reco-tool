@@ -207,9 +207,45 @@
   button.mode.on::after { content:"✓"; position:absolute; right:16px; top:16px; width:22px; height:22px; border-radius:999px; background:var(--brand); color:#fff; font-size:12px; display:grid; place-items:center; }
   #build { padding:13px 28px; font-size:15px; }
   #status { font-size:13.5px; }
+  .card.offtab { display:none !important; }
+  /* module tabs */
+  .tabs { border-top:1px solid var(--line); }
+  .tabs-in { max-width:1180px; margin:0 auto; padding:0 24px; display:flex; gap:4px; overflow-x:auto; }
+  button.tab { background:none; color:var(--muted); border:0; border-bottom:3px solid transparent; border-radius:0; box-shadow:none; padding:10px 18px 9px; display:grid; gap:0; text-align:left; font-weight:500; white-space:nowrap; }
+  button.tab b { font-weight:600; font-size:14.5px; color:var(--text); }
+  button.tab span { font-size:11.5px; font-weight:400; }
+  button.tab:hover { background:var(--tint); }
+  button.tab.on { border-bottom-color:var(--brand); }
+  button.tab.on b { color:var(--brand); }
+  h2 .shared { font-weight:400; margin-left:auto; font-size:12px; background:var(--tint); color:var(--brand); padding:3px 10px; border-radius:999px; }
+  /* ledger flow */
+  table.fl td, table.fl th { padding:7px 10px; }
+  table.fl td.r, table.fl th.r { white-space:nowrap; }
+  table.fl tr.sec td { background:var(--tint); color:var(--brand); font-weight:600; }
+  table.fl tr.tot td { font-weight:600; border-top:1px solid var(--strong); }
+  table.fl tr.sub td { color:var(--muted); font-size:12.5px; }
+  table.fl input, table.fl select { min-width:0; padding:5px 8px; font-size:13px; }
+  table.fl td:first-child { min-width:190px; }
+  table.fl input.amt { width:130px; text-align:right; font-variant-numeric:tabular-nums; }
+  td.neg { color:var(--err); }
+  table.rec td:first-child { min-width:320px; } table.rec td { vertical-align:top; }
+  table.rec tr.unx > td:first-child { border-left:4px solid var(--err); }
+  table.rec .link { font-size:12.5px; padding:0; margin-top:2px; }
+  .item { border:1px solid var(--line); border-radius:var(--r-sm); margin:8px 0; background:#fff; }
+  .item > summary { cursor:pointer; padding:10px 14px; display:grid; grid-template-columns:auto 1fr auto; gap:4px 12px; align-items:baseline; }
+  .item > summary::before { display:none; }
+  .item.un { border-left:4px solid var(--err); } .item.ex { border-left:4px solid var(--ok); }
+  .item .amt { font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap; }
+  .item .why { grid-column:2 / 4; color:var(--muted); font-size:12.5px; }
+  .item-in { padding:4px 14px 14px; border-top:1px solid var(--line); }
+  .edit { display:flex; flex-wrap:wrap; gap:8px; align-items:end; padding:10px; margin:6px 0; background:var(--tint); border-radius:var(--r-sm); }
+  .edit select, .edit input { min-width:0; font-size:13px; padding:6px 8px; }
+  .edit input.remark { flex:1 1 260px; }
+  .grp { margin:16px 0 4px; font-weight:600; color:var(--strong); font-size:14px; }
   footer { max-width:1180px; margin:0 auto; padding:0 24px 32px; color:var(--muted); font-size:12.5px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
   @media (max-width:800px) {
-    .grid2, .modes { grid-template-columns:1fr; }
+    .item > summary { grid-template-columns:1fr; } .item .why { grid-column:auto; } .item .amt { white-space:normal; }
+    .grid2, .modes { grid-template-columns:1fr; } .tabs-in { padding:0 8px; } button.tab { padding:8px 12px; } button.tab span { display:none; }
     .card { padding:20px 16px; } .hero { padding:24px 16px 4px; } main { padding:14px 16px 40px; } .top-in { padding:10px 16px; } footer { padding:0 16px 28px; }
     .hero h1 { font-size:24px; } .top .pill.v, .pill .pt, .brandname span { display:none; } .pill .ps { display:inline; }
     table.cov th.cvl { width:110px; } #coverage, #result, #gen, #files { overflow-x:auto; }
@@ -221,20 +257,18 @@
   <!-- firm logo (src/brand/logo-blue.svg, inlined) --><svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 264" role="img" aria-label="James &amp; James"><path fill="#2B3A8D" d="M521.05,198.393c-8.651-3.352-15.615-8.682-20.91-15.988c-5.292-7.303-7.939-16.473-7.939-27.51 c0-14.464,4.509-25.568,13.533-33.322c9.016-7.75,21.501-12.525,37.455-14.313c-19.831-3.281-29.741-13.571-29.741-30.869 c0-10.732,3.465-18.707,10.398-23.926c6.935-5.218,15.547-7.831,25.835-7.831c6.262,0,11.402,0.638,15.428,1.898 c4.026,1.272,8.198,3.396,12.522,6.377v17.667h-0.894c-1.933-7.152-5.291-12.933-10.063-17.329 c-4.77-4.398-10.438-6.595-16.994-6.595c-7.606,0-13.315,2.564-17.109,7.713c-3.804,5.144-5.706,12.49-5.706,22.026 c0,10.143,2.383,17.669,7.158,22.594c4.771,4.921,13.191,7.376,25.269,7.376h7.383v3.13h-8.051c-16.404,0-28.031,3.77-34.893,11.298 c-6.854,7.534-10.284,18.898-10.284,34.105c0,30.27,12.079,45.404,36.233,45.404c12.073,0,21.132-3.654,27.176-10.959 c6.031-7.307,9.05-17.373,9.05-30.197c0-6.406-0.223-10.916-0.668-13.528c-0.448-2.608-1.717-3.915-3.803-3.915 c-7.903-0.295-16.327-4.475-25.269-12.524l1.116-1.118c4.026,3.578,7.901,5.367,11.629,5.367c2.534,0,4.953-0.596,7.268-1.789 c2.313-1.192,5.479-3.203,9.504-6.036c4.478-3.134,8.313-5.482,11.521-7.049c3.203-1.563,6.67-2.351,10.396-2.351 c8.053,0,16.55,4.103,25.501,12.305l-0.896,1.115c-3.729-3.578-7.683-5.365-11.859-5.365c-2.529,0-5.023,0.638-7.485,1.902 c-2.459,1.264-5.482,3.243-9.059,5.927c-3.728,2.686-6.972,4.805-9.73,6.371c-2.76,1.566-5.702,2.571-8.832,3.021l21.917,13.418 c0,11.037-2.647,20.207-7.941,27.51c-5.291,7.307-12.268,12.637-20.91,15.988c-8.646,3.354-18.193,5.031-28.623,5.031 C539.239,203.424,529.692,201.746,521.05,198.393"/><path fill="#2B3A8D" d="M76.743,14.022H40.392l-0.151,2.025c9.095,1.383,10.878,7.934,10.878,18.775v64.986 c0,11.395-2.084,18.529-6.561,22.442c-6.123,5.343-16.273,4.436-31.05,2.443l-0.77-0.107l-5.565,13.23h10.224 c23.474,0,48.626-27.878,48.626-47.503V34.823c0-10.841,1.781-17.392,10.874-18.775L76.743,14.022z"/><path fill="#2B3A8D" d="M149.825,109.458V76.162c0-14.915-11.453-29.968-37.047-29.968c-11.032,0-23.388,4.471-33.906,12.265 l-1.189,0.878l13.99,8.952l0.583-0.562c12.433-12.102,20.306-16.598,29.043-16.598c7.1,0,14.266,3.513,14.266,11.366 c0,10.466-12.538,14.672-25.813,19.123l-1.958,0.654c-14.143,4.62-31.743,10.356-31.743,27.186c0,12.78,9.842,22.414,22.892,22.414 c17.203,0,30.021-15.552,36.133-24.833v23.226h25.467l0.151-2.031C151.602,126.854,149.825,120.303,149.825,109.458 M91.278,108.813 c0-10.839,6.876-20.082,17.112-22.983c2.829-0.804,5.672-1.419,8.428-2.015c6.847-1.478,13.357-2.888,18.113-6.879 c0.093,15.34-6.133,33.239-14.676,41.977c-3.849,3.936-7.936,5.933-12.142,5.933C101.12,124.844,91.278,119.875,91.278,108.813"/><path fill="#2B3A8D" d="M297.48,109.617V76.648c0-22.359-14.846-30.295-27.557-30.295c-10.96,0-22.24,5.476-29.829,14.385 c-4.451-9.042-13.38-14.385-24.217-14.385c-9.258,0-18.997,4.017-26.489,10.848V46.034l-1.603,1.151 c-9.279,6.601-14.743,9.529-24.369,13.064l0.64,1.935c4.18-1.248,7.08-1.793,8.616-0.646c1.222,0.909,1.815,3.063,1.815,6.581 v41.339c0,9.383-0.803,17.279-10.716,18.775l0.153,2.031h36.351l0.154-2.031c-9.192-1.394-11.042-8.216-11.042-18.775l-0.006-36.67 c1.795-10.931,7.623-18.539,15.995-20.898c5.365-1.496,10.379-0.64,14.478,2.476c5.515,4.186,8.679,11.833,8.679,20.993v34.245 c-0.168,9.75-1.054,17.327-10.719,18.789l0.151,2.031h36.355l0.151-2.031c-9.398-1.421-11.209-8.529-11.036-18.775V76.648 c0-9.815,5.048-21.741,16.144-24.758c5.337-1.488,10.303-0.646,14.367,2.438c5.482,4.158,8.626,11.821,8.626,21.031v34.259 c0,9.384-0.808,17.277-10.718,18.775l0.151,2.031h36.351l0.153-2.031C299.324,126.999,297.48,120.18,297.48,109.617"/><path fill="#2B3A8D" d="M390.015,61.074l0.828-0.858L390,59.369c-7.977-8.517-19.187-13.016-32.419-13.016 c-13.486,0-24.82,4.634-32.78,13.404c-7.056,7.771-10.94,18.228-10.94,29.435c0,20.633,13.685,42.839,43.721,42.839 c13.606,0,24.876-4.453,32.595-12.877l0.521-0.561l-6.973-11.492l-0.727,2.013c-2.564,7.136-8.775,19.113-21.557,19.113 c-4.955,0-10.049-1.747-14.74-5.05c-3.037-3.697-4.256-7.952-3.633-12.651c2.047-15.353,22.84-32.498,36.172-42.043v0.154 L390.015,61.074z M336.091,111.842c-5.172-8.206-7.888-18.311-7.888-29.409c0-16.065,8.141-32.275,26.323-32.275 c8.86,0,17.14,5.254,23.392,14.805l-7.424,5.392C344.787,88.893,337.643,100.356,336.091,111.842"/><path fill="#2B3A8D" d="M434.829,80.618c-12.32-5.884-23.953-11.449-23.953-20.534c0-8.215,7.821-9.44,12.489-9.44h0.016 c0.111,0,0.227,0,0.342,0c12.66,0,23.625,9.133,29.689,17.741l0.801,1.137l8.184-10.714l-0.729-0.624 c-8.829-7.621-20.798-11.991-32.833-11.991c-11.898,0-30.776,5.386-30.776,19.835c0,13.335,14.657,20.362,28.831,27.159 c13.172,6.316,25.608,12.283,25.536,22.541c0,7.785-7.498,11.851-14.904,11.851c-9.876,0-21.056-6.07-33.226-18.046l-0.887-0.871 l-7.285,11.126l0.693,0.58c8.314,6.988,21.889,11.501,34.578,11.501c0.158,0,0.318,0,0.484,0c8.055,0,19.659-2.413,26.607-9.274 c3.839-3.796,5.787-8.433,5.787-13.779C464.273,94.694,449.303,87.538,434.829,80.618"/><path fill="#2B3A8D" d="M76.987,126.181H40.635l-0.151,2.032c9.093,1.379,10.874,7.926,10.874,18.775v64.981 c0,11.398-2.082,18.529-6.563,22.441c-6.121,5.348-16.273,4.436-31.042,2.443l-0.777-0.107L7.414,249.98h10.221 c23.479,0,48.626-27.879,48.626-47.506v-55.487c0-10.849,1.781-17.396,10.878-18.775L76.987,126.181z"/><path fill="#2B3A8D" d="M150.063,221.615v-33.293c0-14.916-11.456-29.969-37.052-29.969c-11.025,0-23.383,4.471-33.897,12.264 l-1.191,0.881l13.994,8.951l0.582-0.563c12.433-12.1,20.304-16.6,29.039-16.6c7.104,0,14.264,3.516,14.264,11.367 c0,10.465-12.536,14.672-25.81,19.121l-1.959,0.654c-14.141,4.621-31.741,10.359-31.741,27.186c0,12.781,9.84,22.414,22.891,22.414 c17.206,0,30.02-15.553,36.135-24.83v23.223h25.469l0.153-2.031C151.842,239.012,150.063,232.463,150.063,221.615 M91.516,220.971 c0-10.838,6.88-20.08,17.113-22.98c2.827-0.803,5.672-1.422,8.427-2.018c6.851-1.477,13.359-2.887,18.115-6.877 c0.093,15.34-6.135,33.238-14.676,41.975c-3.851,3.936-7.94,5.932-12.144,5.932C101.362,237.002,91.516,232.033,91.516,220.971"/><path fill="#2B3A8D" d="M297.718,221.779v-32.973c0-22.359-14.85-30.293-27.559-30.293c-10.958,0-22.238,5.475-29.823,14.387 c-4.45-9.043-13.384-14.387-24.217-14.387c-9.258,0-18.998,4.016-26.489,10.846v-11.162l-1.607,1.146 c-9.272,6.605-14.741,9.531-24.369,13.064l0.638,1.934c4.186-1.248,7.084-1.791,8.623-0.645c1.22,0.908,1.812,3.064,1.812,6.584 v41.338c0,9.383-0.808,17.275-10.712,18.775l0.153,2.027h36.351l0.154-2.027c-9.19-1.395-11.042-8.217-11.042-18.775l-0.01-36.67 c1.795-10.93,7.627-18.543,15.999-20.898c5.365-1.49,10.373-0.641,14.482,2.473c5.506,4.186,8.667,11.84,8.667,20.994v34.248 c-0.16,9.748-1.046,17.322-10.71,18.789l0.151,2.027h36.353l0.147-2.027c-9.392-1.424-11.199-8.531-11.033-18.775v-32.973 c0-9.814,5.046-21.742,16.142-24.756c5.337-1.49,10.313-0.648,14.372,2.436c5.482,4.16,8.624,11.828,8.624,21.031v34.262 c0,9.387-0.804,17.275-10.714,18.775l0.151,2.027h36.353l0.151-2.027C299.566,239.156,297.718,232.338,297.718,221.779"/><path fill="#2B3A8D" d="M390.258,173.234l0.836-0.861l-0.856-0.846c-7.978-8.516-19.189-13.014-32.419-13.014 c-13.481,0-24.819,4.631-32.779,13.404c-7.056,7.768-10.94,18.227-10.94,29.432c0,20.633,13.683,42.84,43.72,42.84 c13.611,0,24.885-4.453,32.604-12.877l0.517-0.563l-6.979-11.482l-0.721,2.01c-2.564,7.131-8.777,19.107-21.556,19.107 c-4.96,0-10.056-1.746-14.741-5.047c-3.034-3.701-4.258-7.955-3.632-12.65c2.041-15.354,22.838-32.502,36.169-42.045v0.152 L390.258,173.234z M336.332,224c-5.168-8.205-7.887-18.307-7.887-29.402c0-16.068,8.14-32.273,26.323-32.273 c8.86,0,17.14,5.246,23.392,14.797l-7.424,5.391C345.031,201.055,337.885,212.516,336.332,224"/><path fill="#2B3A8D" d="M435.066,192.779c-12.314-5.885-23.952-11.449-23.952-20.537c0-8.211,7.825-9.439,12.489-9.439h0.014 c0.119,0,0.232,0,0.344,0c12.658,0,23.623,9.135,29.695,17.742l0.8,1.137l8.182-10.715l-0.729-0.623 c-8.828-7.621-20.794-11.99-32.837-11.99c-11.896,0-30.772,5.383-30.772,19.836c0,13.334,14.658,20.361,28.831,27.16 c13.17,6.314,25.603,12.283,25.534,22.539c0,7.783-7.5,11.852-14.904,11.852c-9.874,0-21.049-6.072-33.223-18.043l-0.888-0.875 l-7.291,11.127l0.692,0.58c8.321,6.99,21.899,11.5,34.585,11.5c0.159,0,0.314,0,0.479,0c8.061,0,19.665-2.41,26.609-9.271 c3.843-3.799,5.791-8.436,5.791-13.783C464.516,206.855,449.545,199.697,435.066,192.779"/></svg>
   <div class="brandname"><b>GST Reco Loader</b><span>James &amp; James LLP · Taxation</span></div>
   <div class="spacer"></div>
-  <span class="pill v">GSTR-9 / 9C · v0.8</span>
+  <span class="pill v">v0.9</span>
   <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span class="pt">Offline · files stay on this computer</span><span class="ps">Offline</span></span>
-</div></header>
-<section class="hero"><h1>GST <em>reconciliation</em> &amp; annual return loader</h1><p>Monthly ITC reconciliation against GSTR-2B, or the full GSTR-9 workbook and upload JSON. Pick a mode, drop your files, map any register, and build.</p></section>
+</div>
+  <nav class="tabs" role="tablist" aria-label="Modules"><div class="tabs-in">
+    <button class="tab" role="tab" data-tab="itc"><b>Input Reco</b><span>GSTR-2B vs purchases</span></button>
+    <button class="tab" role="tab" data-tab="annual"><b>Annual return</b><span>GSTR-9 / 9C</span></button>
+    <button class="tab" role="tab" data-tab="flow"><b>GST ledger flow</b><span>Portal ledgers vs books</span></button>
+  </div></nav></header>
+<section class="hero"><h1 id="heroT">GST <em>reconciliation</em> &amp; annual return loader</h1><p id="heroP"></p></section>
 <main>
-  <section class="card">
-    <h2><span class="num">1</span> What are you doing?</h2>
-    <div class="modes">
-      <button class="mode" data-mode="itc"><b>Monthly ITC reconciliation</b><span>GSTR-2B vs purchase register, for any month, quarter or the year. Output: ITC reconciliation workbook with claimable ITC and supplier follow-ups.</span></button>
-      <button class="mode" data-mode="annual"><b>Annual return</b><span>GSTR-9 / GSTR-9C from GSTR-1, 3B, 2B and the portal JSON, with sales and purchase reconciliations and the upload JSON.</span></button>
-    </div>
-  </section>
-  <section class="card">
-    <h2><span class="num">2</span> Add files</h2>
+  <section class="card" data-tabs="itc annual flow">
+    <h2><span class="num">1</span> Add files <span class="muted shared">shared by all tabs</span></h2>
     <div id="drop"><b>Drop files here</b> or click to choose<br/><span class="muted">File names don't matter: each file is recognised by its content.</span><br/>
       <span class="muted" id="dropHint">GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Nov) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it</span></div>
     <input id="pick" type="file" multiple accept=".json,.pdf,.zip,.xlsx,.csv" hidden />
@@ -332,17 +366,17 @@
     </details>
     <details id="filelist" style="margin-top:18px"><summary class="eyebrow" style="cursor:pointer">Files added</summary><div id="files" style="margin-top:10px"></div></details>
   </section>
-  <section class="card" id="regcard" style="display:none">
+  <section class="card" id="regcard" data-tabs="itc annual" data-sub="b" style="display:none">
     <h2><span class="num">2b</span> Map register columns</h2>
     <p class="muted" style="margin-top:-8px">Tell the Loader which column holds what. Amount fields take several columns for Tally columnar registers (they are summed). Rows per rate or per item are fine: they are added up to invoice level when reconciling. Mappings are remembered for registers with the same columns.</p>
     <div id="regs"></div>
   </section>
-  <section class="card" id="supcard" style="display:none">
+  <section class="card" id="supcard" data-tabs="itc annual" data-sub="c" style="display:none">
     <h2><span class="num">2c</span> Confirm supplier names</h2>
     <p class="muted">Purchase lines without a supplier GSTIN get it from GSTR-2B by supplier name. Names that differ only in spelling, abbreviations or "Pvt Ltd" need your confirmation first; unconfirmed ones are matched by invoice no. and amount only.</p>
     <div id="sups"></div>
   </section>
-  <section class="card">
+  <section class="card" data-tabs="itc annual flow">
     <h2><span class="num">3</span> Confirm client &amp; year</h2>
     <div class="row">
       <label>Financial year<select id="fy"></select></label>
@@ -350,22 +384,55 @@
       <label style="flex:1">Legal name<input id="legal" placeholder="detected from GSTR-3B" style="width:100%" /></label>
     </div>
   </section>
-  <section class="card" id="rvcard" style="display:none">
+  <section class="card" id="rvcard" data-tabs="itc annual" style="display:none">
     <h2><span class="num">4</span> Review matches</h2>
     <p class="muted">The reconciliation, run here before anything is built. Change how documents are matched, filter by status, party or period with totals, and match or unmatch documents by hand. Your choices go into the workbook.</p>
     <div id="rv"></div>
   </section>
-  <section class="card">
+  <section class="card" data-tabs="itc annual">
     <h2><span class="num">5</span> Build workbook</h2>
     <div class="row"><button id="build" disabled>Build workbook</button><span id="status" class="muted"></span></div>
     <div id="result" style="margin-top:14px"></div>
   </section>
-  <section class="card" id="step4">
+  <section class="card" id="step4" data-tabs="annual">
     <h2><span class="num">6</span> Generate upload JSON</h2>
     <p class="muted" style="margin-top:-8px">When the workbook is reviewed: open it in Excel, save it, and drop the saved file here. The "To be Filed" columns become the GSTR-9 upload JSON.</p>
     <div id="drop2" class="dz"><b>Drop the finished workbook here</b> or click to choose</div>
     <input id="pick2" type="file" accept=".xlsx" hidden />
     <div id="gen" style="margin-top:14px"></div>
+  </section>
+  <section class="card" data-tabs="flow" id="fl-portal">
+    <h2><span class="num">3</span> Portal ledgers</h2>
+    <p class="muted">Electronic Credit Ledger, Electronic Cash Ledger and Electronic Liability Register, as downloaded from the portal (CSV or Excel). Drop them under Add files.</p>
+    <div id="flPortal"></div>
+  </section>
+  <section class="card" data-tabs="flow" id="fl-books">
+    <h2><span class="num">4</span> Books: GST accounts</h2>
+    <p class="muted">GST ledgers from Tally, Zoho or any software: a full GL / voucher dump, or each GST ledger on its own. The tool picks the GST accounts by name: confirm what each one is and its tax head.</p>
+    <div id="flBooks"></div>
+  </section>
+  <section class="card" data-tabs="flow" id="fl-bal">
+    <h2><span class="num">5</span> Opening and closing balances</h2>
+    <p class="muted">Filled from the files where they carry balances (single-ledger exports, the portal's Opening Balance rows). GL dumps usually have none: enter the opening from the trial balance of the day before the period, and the closing to check against.</p>
+    <div id="flBal"></div>
+  </section>
+  <section class="card" data-tabs="flow" id="fl-flow">
+    <h2><span class="num">6</span> GST flow</h2>
+    <div id="flFlow"></div>
+  </section>
+  <section class="card" data-tabs="flow" id="fl-reasons">
+    <h2><span class="num">7</span> Reconciliation: books to portal</h2>
+    <p class="muted">Worked out from the entries, in five steps: set-up checks, the year comparison, ITC against GSTR-2B and 3B, suggested journals, and the closing statement. To correct a books line (its flow row, tax head or return period), open a month with Show lines and use Change, with a remark. Every change goes to the Audit sheet.</p>
+    <div id="flReasons"></div>
+  </section>
+  <section class="card" data-tabs="flow" id="fl-checks">
+    <h2><span class="num">8</span> Cross-checks</h2>
+    <div id="flChecks"></div>
+  </section>
+  <section class="card" data-tabs="flow" id="fl-build">
+    <h2><span class="num">9</span> Build workbook</h2>
+    <div class="row"><button id="flBuild" disabled>Build GST flow workbook</button><span id="flStatus" class="muted"></span></div>
+    <div id="flResult" style="margin-top:14px"></div>
   </section>
   </main>
 <footer><span>Raw data goes to the RAW_ sheets; Books, Basis choices and adjustments are kept when you drop your own workbook.</span><span>James &amp; James LLP · jjglobal.in</span></footer>

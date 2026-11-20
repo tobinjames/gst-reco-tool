@@ -7,6 +7,7 @@ import { linesFromItems, parse3b } from './gstr3b';
 import { fyShift } from './util';
 import { generate9 } from './gen9';
 import { Review } from './review';
+import { FlowTab } from './flow/ui';
 import { applyAliases, supplierSuggestions, suppliersFrom2B } from './suppliers';
 import { FieldDef, Mapping, PURCHASE_FIELDS, RegKind, RegSheet, SALES_FIELDS, colsOf, detectHeader, guessMappingFull, isMapped, looksColumnar, normalise, readTable, unusedAmountCols } from './register';
 
@@ -19,20 +20,45 @@ document.querySelectorAll('button.gtab').forEach((b: any) => (b.onclick = () => 
   document.querySelectorAll('.gtab, .gpane').forEach((x: any) => x.classList.toggle('on', x.dataset.g === b.dataset.g));
 }));
 let files: InFile[] = [];
+type Tab = 'itc' | 'annual' | 'flow';
 type Mode = 'itc' | 'annual';
-let mode: Mode = (() => { try { return (localStorage.getItem('jjmode') as Mode) || 'annual'; } catch { return 'annual'; } })();
-function setMode(m: Mode) {
-  mode = m; try { localStorage.setItem('jjmode', m); } catch { /* ignore */ }
-  document.querySelectorAll('button.mode').forEach((b: any) => b.classList.toggle('on', b.dataset.mode === m));
-  $('step4').style.display = m === 'annual' ? '' : 'none';
-  $('dropHint').textContent = m === 'itc'
-    ? 'GSTR-2B JSON(s) for the months you are reconciling · purchase register (.xlsx / .csv, any format) · optionally the previous ITC reconciliation workbook to keep match codes and remarks'
-    : 'GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Nov) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it';
-  $('build').textContent = m === 'itc' ? 'Build ITC reconciliation' : 'Build workbook';
+let tab: Tab = (() => { try { const t = localStorage.getItem('jjmode') as Tab; return ['itc', 'annual', 'flow'].includes(t) ? t : 'annual'; } catch { return 'annual'; } })();
+const HERO: Record<Tab, [string, string, string]> = {
+  itc: ['Input <em>reconciliation</em>', 'GSTR-2B against the purchase register, month by month: matched, books only, 2B only and value differences, with your match codes and remarks kept.', 'GSTR-2B JSON(s) for the months you are reconciling · purchase register (.xlsx / .csv, any format) · optionally the previous ITC reconciliation workbook to keep match codes and remarks'],
+  annual: ['Annual return <em>loader</em>', 'GSTR-1, 2B, 3B and the registers into the GSTR-9 / 9C workbook, and the finished workbook back into the GSTR-9 upload JSON.', 'GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Nov) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it'],
+  flow: ['GST <em>ledger flow</em>', 'Opening, output tax, input tax, payments, refunds, reversals and closing, as per books and as per the portal, with the reasons for each difference worked out from the entries.', 'Portal Electronic Credit Ledger, Cash Ledger and Liability Register (CSV / Excel) · GST ledgers from Tally, Zoho or any software, one by one or as a full GL dump (.xlsx / .csv) · optionally GSTR-3B PDFs for the 3B checks'],
+};
+/** the mode the reconciliation code works in (the flow tab has no matching review) */
+const mode = (): Mode => (tab === 'itc' ? 'itc' : 'annual');
+function setTab(t: Tab) {
+  tab = t; try { localStorage.setItem('jjmode', t); } catch { /* ignore */ }
+  document.querySelectorAll('button.tab').forEach((b: any) => { b.classList.toggle('on', b.dataset.tab === t); b.setAttribute('aria-selected', String(b.dataset.tab === t)); });
+  let n = 0;
+  document.querySelectorAll('main > section.card').forEach((c: any) => {
+    const on = (c.dataset.tabs || '').split(/\s+/).includes(t);
+    c.classList.toggle('offtab', !on);
+    if (!on) return;
+    const num = c.querySelector('h2 .num');
+    if (c.dataset.sub) { if (num) num.textContent = `${n}${c.dataset.sub}`; } else if (num) num.textContent = String(++n);
+  });
+  $('heroT').innerHTML = HERO[t][0]; $('heroP').textContent = HERO[t][1]; $('dropHint').textContent = HERO[t][2];
+  $('build').textContent = t === 'itc' ? 'Build ITC reconciliation' : 'Build workbook';
   $('result').innerHTML = '';
   render();
 }
-document.querySelectorAll('button.mode').forEach((b: any) => (b.onclick = () => setMode(b.dataset.mode)));
+document.querySelectorAll('button.tab').forEach((b: any) => (b.onclick = () => setTab(b.dataset.tab)));
+
+/** the client's GSTIN: as typed, else the most frequent one in the files */
+function clientGstin(): string {
+  const typed = String($('gstin').value || '').trim().toUpperCase();
+  if (typed && $('gstin').dataset.touched) return typed;
+  const c: Record<string, number> = {};
+  for (const f of files) if (f.gstin) c[f.gstin] = (c[f.gstin] || 0) + 1;
+  return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0] || typed;
+}
+/** files of another GSTIN are left out of every tab (single GSTIN for now) */
+const otherGstin = () => { const g = clientGstin(); return g ? files.filter(f => f.gstin && f.gstin.toUpperCase() !== g) : []; };
+const activeFiles = () => { const o = new Set(otherGstin()); return files.filter(f => !o.has(f)); };
 
 async function parsePdf(b: Uint8Array, name: string) {
   const doc = await pdfjs.getDocument({ data: b }).promise;
@@ -45,10 +71,11 @@ const esc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;',
 const fmtP = (p?: string) => p && p.length === 6 ? `${p.slice(0, 2)}/${p.slice(2)}` : (p || '');
 
 function render() {
-  const order = ['Workbook', 'Register', 'GSTR-9 (portal)', 'GSTR-3B', 'GSTR-1', 'GSTR-2B', 'Unknown'];
+  const order = ['Workbook', 'Register', 'Portal ledger', 'Books ledger', 'GSTR-9 (portal)', 'GSTR-3B', 'GSTR-1', 'GSTR-2B', 'Unknown'];
   const sorted = [...files].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || (a.period || '').slice(2).localeCompare((b.period || '').slice(2)) || (a.period || '').localeCompare(b.period || ''));
-  $('files').innerHTML = files.length ? `<table><tr><th>File</th><th>Type</th><th>GSTIN</th><th>Period</th><th>FY</th><th>Note</th><th></th></tr>` +
-    sorted.map(f => `<tr><td>${esc(f.name)}</td><td><span class="tag">${f.kind}</span></td><td>${esc(f.gstin)}</td><td>${fmtP(f.period)}</td><td>${esc(f.fy)}</td><td class="muted">${esc(f.note)}</td><td><button class="link" data-i="${files.indexOf(f)}">remove</button></td></tr>`).join('') + '</table>' : '';
+  const other = new Set(otherGstin());
+  $('files').innerHTML = files.length ? `<div class="tablewrap"><table><tr><th>File</th><th>Type</th><th>GSTIN</th><th>Period</th><th>FY</th><th>Note</th><th></th></tr>` +
+    sorted.map(f => `<tr><td>${esc(f.name)}</td><td><span class="tag">${f.kind}</span></td><td>${esc(f.gstin)}${other.has(f) ? ' <span class="warn-error">other GSTIN: ignored</span>' : ''}</td><td>${fmtP(f.period)}</td><td>${esc(f.fy)}</td><td class="muted">${esc(f.note)}</td><td><button class="link" data-i="${files.indexOf(f)}">remove</button></td></tr>`).join('') + '</table></div>' : '';
   $('files').querySelectorAll('button[data-i]').forEach((b: any) => b.onclick = () => { files.splice(+b.dataset.i, 1); render(); });
   // FY options: from 3B / 2B / portal; default = most frequent 3B FY
   const counts: Record<string, number> = {};
@@ -60,11 +87,12 @@ function render() {
   const opts = Array.from({ length: 8 }, (_, i) => `${curFy - i}-${String(curFy - i + 1).slice(2)}`);
   sel.innerHTML = opts.map(o => `<option>${o}</option>`).join('');
   sel.value = cur && sel.dataset.touched ? cur : (best || fyShift(opts[0], -1));
-  const g = files.find(f => f.gstin)?.gstin; if (g && !$('gstin').dataset.touched) $('gstin').value = g;
+  const g = clientGstin(); if (g && !$('gstin').dataset.touched) $('gstin').value = g;
   const l = files.find(f => f.threeB?.legalName)?.threeB?.legalName; if (l && !$('legal').dataset.touched) $('legal').value = l;
-  $('build').disabled = !files.some(f => f.kind !== 'Unknown');
+  $('build').disabled = !activeFiles().some(f => f.kind !== 'Unknown' && f.kind !== 'Portal ledger' && f.kind !== 'Books ledger');
   renderCoverage();
   renderRegisters();
+  flow.refresh();
 }
 
 // ---------- month-wise coverage grid
@@ -81,8 +109,11 @@ function covered(f: InFile): string[] {
 }
 function renderCoverage() {
   const el = $('coverage');
-  if (!files.length) { el.innerHTML = ''; return; }
-  if (mode === 'itc') {
+  const files = activeFiles(), oth = otherGstin();
+  if (!files.length && !oth.length) { el.innerHTML = ''; return; }
+  const othHtml = oth.length ? `<div class="gaps"><span class="warn-error">${oth.length} file(s) of another GSTIN are ignored in every tab:</span> ${oth.map(f => `${esc(f.name)} (${esc(f.gstin)})`).join(', ')}. The client GSTIN is ${esc(clientGstin())}: change it under Confirm client &amp; year if that is wrong.</div>` : '';
+  if (tab === 'flow') { el.innerHTML = flow.coverageHtml() + othHtml; return; }
+  if (tab === 'itc') {
     const fy = $('fy').value, ps = periodsOf(fy);
     const g2 = new Set(files.filter(f => f.kind === 'GSTR-2B').flatMap(covered));
     const loaded = ps.filter(p => g2.has(p));
@@ -92,7 +123,7 @@ function renderCoverage() {
     el.innerHTML = `<table class="cov"><tr><th class="cvl">Return</th>${MON.map(m => `<th class="cvh">${m}</th>`).join('')}</tr>
       <tr><th class="cvl">GSTR-2B<span>${fy}</span></th>${ps.map((p, i) => g2.has(p) ? `<td class="cv ok">✓</td>` : (i > first && i < last ? `<td class="cv miss">✕</td>` : `<td class="cv na">·</td>`)).join('')}</tr></table>
       <div class="gaps">${!loaded.length ? '<span class="warn-error">Add the GSTR-2B JSON for the month(s) you are reconciling.</span>' : gaps.length ? `<span class="warn-error">Gap in 2B months:</span> ${gaps.map(p => MON[ps.indexOf(p)]).join(', ')}` : `<span class="ok-text">2B loaded for ${loaded.map(p => MON[ps.indexOf(p)]).join(', ')}.</span>`}
-      ${regs ? '' : ' · <span class="warn-error">Add the purchase register.</span>'}</div>`;
+      ${regs ? '' : ' · <span class="warn-error">Add the purchase register.</span>'}</div>${othHtml}`;
     return;
   }
   const fy = $('fy').value, ny = fyShift(fy, 1), py = fyShift(fy, -1);
@@ -129,9 +160,9 @@ function renderCoverage() {
     <div class="gaps">${gaps.length ? `<span class="warn-error">Missing:</span> ${gaps.join(' · ')}` : '<span class="ok-text">All required months loaded.</span>'}
       ${files.some(f => f.kind === 'GSTR-1' && f.json?.filing_typ === 'Q') ? '<br/><span class="muted">Quarterly GSTR-1 counts for all three months of its quarter. For quarterly (QRMP) 3B filers, only quarter-end months are expected.</span>' : ''}
       ${wbk ? '<br/><span class="muted">Existing workbook loaded: sheets for return types you don\'t add here are left as they are.</span>' : ''}
-      ${outside.length ? `<br/><span class="warn-warn">${outside.length} file(s) outside ${py} to ${ny} will be ignored: ${outside.map(f => esc(f.name)).join(', ')}</span>` : ''}</div>`;
+      ${outside.length ? `<br/><span class="warn-warn">${outside.length} file(s) outside ${py} to ${ny} will be ignored: ${outside.map(f => esc(f.name)).join(', ')}</span>` : ''}</div>${othHtml}`;
 }
-['fy', 'gstin', 'legal'].forEach(id => $(id).addEventListener('change', () => { $(id).dataset.touched = '1'; renderCoverage(); renderRegisters(); }));
+['fy', 'gstin', 'legal'].forEach(id => $(id).addEventListener('change', () => { $(id).dataset.touched = '1'; if (id === 'gstin') { render(); return; } renderCoverage(); renderRegisters(); flow.refresh(); }));
 
 async function addFiles(list: FileList | File[]) {
   $('status').textContent = 'Reading files…';
@@ -161,9 +192,9 @@ $('build').onclick = async () => {
   $('build').disabled = true; $('status').textContent = 'Building…'; $('result').innerHTML = '';
   try {
     const fy = $('fy').value;
-    if (mode === 'itc') { await buildItcNow(fy); $('build').disabled = false; return; }
+    if (tab === 'itc') { await buildItcNow(fy); $('build').disabled = false; return; }
     const tpl = new Uint8Array(await (await fetch(templateUrl)).arrayBuffer());
-    const res = await buildWorkbook(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), ...registerRows(fy), ...review.extra() });
+    const res = await buildWorkbook(tpl, activeFiles().filter(f => f.kind !== 'Register' && f.kind !== 'Portal ledger' && f.kind !== 'Books ledger'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), ...registerRows(fy), ...review.extra() });
     const name = `GSTR9_${($('gstin').value || 'client').trim()}_${fy}.xlsx`;
     const url = URL.createObjectURL(new Blob([res.bytes as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
     const a = document.createElement('a'); a.href = url; a.download = name; a.click();
@@ -180,7 +211,6 @@ $('build').onclick = async () => {
   }
   $('build').disabled = false;
 };
-setMode(mode);
 
 
 // ---------- step 4: workbook -> GSTR-9 upload JSON
@@ -258,7 +288,7 @@ const defaults = (st: RegState) => ({ noGstinZeroTax: st.d.noGstinZeroTax || 'EX
 
 function renderRegisters() {
   const regs = files.filter(f => f.kind === 'Register');
-  if (mode === 'itc') for (const f of regs) { const st = regState.get(f); if (st && st.kind !== 'purchases') { st.kind = 'purchases'; st.header = detectHeader(st.sheets[st.sheet].rows, PURCHASE_FIELDS); remap(st); } }
+  if (tab === 'itc') for (const f of regs) { const st = regState.get(f); if (st && st.kind !== 'purchases') { st.kind = 'purchases'; st.header = detectHeader(st.sheets[st.sheet].rows, PURCHASE_FIELDS); remap(st); } }
   $('regcard').style.display = regs.length ? '' : 'none';
   const box = $('regs');
   box.innerHTML = '';
@@ -299,7 +329,7 @@ function renderRegisters() {
     } else prevHtml = `<p class="warn-error">Map the required fields: ${missing.map(m => esc(m.label)).join(', ')}</p>`;
     div.innerHTML = `<h3>${esc(f.name)}</h3>
       <div class="row">
-        <label ${mode === 'itc' ? 'style="display:none"' : ''}>Register type<select data-k="kind"><option value="sales" ${st.kind === 'sales' ? 'selected' : ''}>Sales register</option><option value="purchases" ${st.kind === 'purchases' ? 'selected' : ''}>Purchase register</option></select></label>
+        <label ${tab === 'itc' ? 'style="display:none"' : ''}>Register type<select data-k="kind"><option value="sales" ${st.kind === 'sales' ? 'selected' : ''}>Sales register</option><option value="purchases" ${st.kind === 'purchases' ? 'selected' : ''}>Purchase register</option></select></label>
         ${st.sheets.length > 1 ? `<label>Sheet<select data-k="sheet">${st.sheets.map((x, i) => `<option value="${i}" ${i === st.sheet ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : ''}
         <label>Header row<input data-k="header" type="number" min="1" value="${st.header + 1}" style="min-width:0;width:90px"/></label>
       </div>
@@ -345,7 +375,7 @@ const confirmedAliases = () => new Map(Object.entries(aliasStore()).filter(([, g
 const supPick = new Map<string, string>(); // name key → GSTIN chosen in the dropdown (not yet confirmed)
 function renderSuppliers() {
   const card = $('supcard'), box = $('sups');
-  const b2 = files.filter(f => f.kind === 'GSTR-2B');
+  const b2 = activeFiles().filter(f => f.kind === 'GSTR-2B');
   const pur = b2.length ? registerRows($('fy').value, true).purchases : undefined;
   queueMicrotask(() => review.refresh()); // after module init (review is declared further down)
   const sup2b = b2.length ? suppliersFrom2B(b2.map(f => f.json)) : new Map();
@@ -390,10 +420,10 @@ function renderSuppliers() {
 
 // ---------- review matches (step 4): runs the reconciliation in the page; settings and manual decisions go into the build
 const review = new Review($('rvcard'), $('rv'), () => {
-  if (!files.length) return null;
+  if (!files.length || tab === 'flow') return null;
   let regs: any;
   try { regs = registerRows($('fy').value); } catch (e: any) { regs = e.message; }
-  return { files, fy: $('fy').value, mode, regs };
+  return { files: activeFiles().filter(f => f.kind !== 'Portal ledger' && f.kind !== 'Books ledger'), fy: $('fy').value, mode: mode(), regs };
 });
 
 
@@ -403,7 +433,7 @@ async function buildItcNow(fy: string) {
   try {
     const tpl = new Uint8Array(await (await fetch(itcTemplateUrl)).arrayBuffer());
     const regs = registerRows(fy);
-    const res = await buildItc(tpl, files.filter(f => f.kind !== 'Register'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), purchases: regs.purchases, ...review.extra() });
+    const res = await buildItc(tpl, activeFiles().filter(f => f.kind !== 'Register' && f.kind !== 'Portal ledger' && f.kind !== 'Books ledger'), fy, { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), purchases: regs.purchases, ...review.extra() });
     const p = res.periods;
     const label = !p.length ? fy : p.length === 1 ? p[0] : `${p[0]}-${p[p.length - 1]}`;
     const name = `ITC_Recon_${($('gstin').value || 'client').trim()}_${label}.xlsx`;
@@ -423,3 +453,8 @@ async function buildItcNow(fy: string) {
     $('status').textContent = '';
   } catch (e: any) { $('status').innerHTML = `<span class="warn-error">${esc(e.message)}</span>`; }
 }
+
+// ---------- GST ledger flow tab
+const flow = new FlowTab(() => ({ files: activeFiles(), fy: $('fy').value, gstin: clientGstin(), legal: String($('legal').value || '').trim(), active: tab === 'flow', register: () => registerRows($('fy').value, true).purchases }), () => render());
+
+setTab(tab);
