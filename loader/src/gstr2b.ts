@@ -40,7 +40,7 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
       if (counted && isImport) {
         if (dfy === cy && bfy === cy) key = '8G';
         else if (dfy === cy && nyInWindow) key = '8G+8H1';
-      } else if (counted && ['B2B', 'B2BA', 'CDNR', 'CDNRA'].includes(section)) {
+      } else if (counted && ['B2B', 'B2BA', 'CDNR', 'CDNRA', 'ECOM', 'ECOMA'].includes(section)) {
         if (dfy === cy && bfy === cy) key = '8A';
         else if (dfy === cy && nyInWindow) key = '8A+8C';
         else if (dfy === py && bfy === cy) key = '6A1';
@@ -68,6 +68,9 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
     for (const [sec, arr] of [
       ['B2B', dd.b2b],
       ['B2BA', dd.b2ba],
+      // documents from suppliers selling through an e-commerce operator who pays tax u/s 9(5): same shape as B2B (format v4.x)
+      ['ECOM', dd.ecom],
+      ['ECOMA', dd.ecoma],
     ] as const)
       for (const s of arr || [])
         for (const inv of s.inv || []) emit(sec, s, inv, inv.inum, inv.dt, 'INV', amt2b(inv), inv.rev ?? 'N', inv.itcavl ?? 'Y');
@@ -100,7 +103,7 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
           const a: Amt = [0, r2(n(doc.cgst)), r2(n(doc.sgst)), r2(n(doc.igst)), r2(n(doc.cess))];
           rows.push({
             key: '',
-            amt: doc.doctyp === 'C' ? neg(a) : a,
+            amt: doc.doctyp === 'C' || doc.doctyp === 'ISDC' ? neg(a) : a, // ISD credit notes: 'ISDC' in the GSTN format
             info: [
               '2B',
               bfy,
@@ -118,11 +121,14 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
             ],
           });
         }
+    // IMPG is a flat list of bills of entry; IMPGSEZ groups them by SEZ supplier: [{ ctin, trdnm, boe: [...] }]
     for (const [sec, arr] of [
       ['IMPG', dd.impg],
       ['IMPGSEZ', dd.impgsez],
     ] as const)
-      for (const doc of arr || []) {
+      for (const doc of (arr || []).flatMap((s: any) =>
+        Array.isArray(s.boe) ? s.boe.map((b: any) => ({ ...b, ctin: s.ctin, trdnm: s.trdnm })) : [s],
+      )) {
         const a: Amt = [r2(n(doc.txval)), 0, 0, r2(n(doc.igst)), r2(n(doc.cess))];
         emit(
           sec,
@@ -138,8 +144,15 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
         );
       }
     for (const sec of Object.keys(dd))
-      if (!['b2b', 'b2ba', 'cdnr', 'cdnra', 'isd', 'isda', 'impg', 'impgsez'].includes(sec))
-        warns.push({ level: 'info', file: f.name, msg: `2B section "${sec}" not used` });
+      if (!['b2b', 'b2ba', 'cdnr', 'cdnra', 'isd', 'isda', 'impg', 'impgsez', 'ecom', 'ecoma'].includes(sec))
+        warns.push({
+          level: sec === 'itcrev' && dd[sec]?.length ? 'warn' : 'info',
+          file: f.name,
+          msg:
+            sec === 'itcrev'
+              ? `2B "ITC reversal" section (IMS) is not read yet: check the reversal against GSTR-3B 4B by hand`
+              : `2B section "${sec}" not used`,
+        });
   }
   return { rows, periods: [...periods].sort() };
 }

@@ -127,7 +127,7 @@ export function itcThreeWay(
   const b2bByM = new Map<Ym, number>();
   for (const x of pool) {
     if (
-      !['B2B', 'B2BA', 'CDNR', 'CDNRA', 'IMPG', 'IMPGSEZ', 'ISD', 'ISDA'].includes(String(x[9])) ||
+      !['B2B', 'B2BA', 'CDNR', 'CDNRA', 'ECOM', 'ECOMA', 'IMPG', 'IMPGSEZ', 'ISD', 'ISDA'].includes(String(x[9])) ||
       String(x[16]) === 'N' ||
       String(x[17]) === 'Y'
     )

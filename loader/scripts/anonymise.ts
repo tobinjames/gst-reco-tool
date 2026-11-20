@@ -31,7 +31,7 @@ if (!src || !name) {
   process.exit(1);
 }
 
-const GSTIN = /\b(\d{2})([A-Z]{5}\d{4}[A-Z])([1-9A-Z])Z([0-9A-Z])\b/g;
+const GSTIN = /\b(\d{2})([A-Z]{5}\d{4}[A-Z])([1-9A-Z])([Z1-9A-J])([0-9A-Z])\b/g; // GSTN REGEX_1
 const L = 'ABCDEFGHJKLMNPQRSTUVWXYZ',
   D = '0123456789';
 /** made-up PAN from the real one (stable, so the same PAN always becomes the same fake one) */
@@ -50,9 +50,9 @@ const fakePan = (pan: string) => {
 };
 const seen = new Map<string, string>();
 const swap = (s: string) =>
-  s.replace(GSTIN, (g, st, pan, ent) => {
+  s.replace(GSTIN, (g, st, pan, ent, z) => {
     if (g === keep) return g;
-    const f = st + fakePan(pan) + ent + 'Z' + L[createHash('sha256').update(g).digest()[0] % L.length];
+    const f = st + fakePan(pan) + ent + z + L[createHash('sha256').update(g).digest()[0] % L.length];
     seen.set(g, f);
     return f;
   });

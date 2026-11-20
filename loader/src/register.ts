@@ -419,7 +419,8 @@ const amt = (v: any) => {
   const x = parseFloat(s) || 0;
   return neg ? -Math.abs(x) : x;
 };
-const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+// GSTN REGEX_1 (normal, composition, ISD): the 14th character is usually Z, but GSTN also allows 1-9 and A-J
+const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z][Z1-9A-J][0-9A-Z]$/;
 const MON3 = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 export function parseDate(v: any): string {
   if (typeof v === 'string') {

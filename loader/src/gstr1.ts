@@ -47,6 +47,10 @@ export function isGstr1(j: any) {
   );
 }
 
+/** a section as a list: GSTN format v5.0 (2026) splits AT / ATA / TXPD / TXPDA by recipient type,
+ * e.g. { at_b2b: [...], at_b2c: [...], at_exp: [...], at_ecom: { at_ecomurp2b: [...], ... } } */
+const listOf = (v: any): any[] => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v).flatMap(listOf) : []);
+
 function extract(f: G1File): { docs: Doc[]; hsn: any[] } {
   const j = f.json,
     period = String(j.fp),
@@ -203,7 +207,7 @@ function extract(f: G1File): { docs: Doc[]; hsn: any[] } {
     ['txpd', 'TXP', false],
     ['txpda', 'TXP', true],
   ] as const)
-    for (const p of j[sec] || [])
+    for (const p of listOf(j[sec]))
       for (const it of p.itms || [])
         push({
           section: sec.toUpperCase(),
@@ -308,6 +312,19 @@ export function processGstr1(files: G1File[], cy: string, ny: string, warns: War
     const fp = `${f.json.gstin}|${f.json.fp}|${f.name.replace(/_\d+\.json$/i, '')}`;
     const { docs, hsn } = extract(f);
     all.push(...docs);
+    if (Object.values(f.json.supecoa ?? {}).some((v: any) => Array.isArray(v) && v.length))
+      warns.push({
+        level: 'warn',
+        file: f.name,
+        msg: 'GSTR-1 Table 14A (amendments of supplies through e-commerce operators) is not read yet; check it by hand',
+      });
+    for (const sec of ['ecom', 'ecoma'])
+      if (f.json[sec] && Object.values(f.json[sec]).some((v: any) => Array.isArray(v) && v.length))
+        warns.push({
+          level: 'warn',
+          file: f.name,
+          msg: `GSTR-1 section "${sec}" (Table 15: supplies on which an e-commerce operator pays tax u/s 9(5)) is not read yet; check Tables 4 / 5 by hand`,
+        });
     if (fyOfPeriod(String(f.json.fp)) === cy) hsnRows.push(...hsn);
     seen.add(fp);
   }

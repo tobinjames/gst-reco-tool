@@ -160,7 +160,7 @@ export async function generate9(bytes: Uint8Array, template?: Uint8Array): Promi
 
   const gstin = (await str('Basic', 'C6')).toUpperCase();
   const fy = await str('Basic', 'C7');
-  if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin))
+  if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z][Z1-9A-J][0-9A-Z]$/.test(gstin))
     msgs.push({ level: 'error', msg: `GSTIN "${gstin}" on the Basic sheet is not valid` });
   if (!/^\d{4}-\d{2}$/.test(fy))
     msgs.push({ level: 'error', msg: `Financial year "${fy}" on the Basic sheet is not in YYYY-YY format` });

@@ -286,7 +286,7 @@ export function reconPurchases(
   const pool = b2bRows.filter(
     r =>
       r &&
-      ['B2B', 'B2BA', 'CDNR', 'CDNRA', 'IMPG', 'IMPGSEZ'].includes(String(r[9])) &&
+      ['B2B', 'B2BA', 'CDNR', 'CDNRA', 'ECOM', 'ECOMA', 'IMPG', 'IMPGSEZ'].includes(String(r[9])) &&
       (String(r[7]) === cy || (String(r[7]) === ny && String(r[15]) !== ny)),
   );
   const ret: Doc[] = [];
