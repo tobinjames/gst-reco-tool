@@ -1,6 +1,7 @@
 // Small multi-sheet .xlsx writer: values, formulas (with cached values), a fixed set of J&J styles, column widths, frozen panes, autofilter.
 // Excel 2010+ compatible; formulas are recalculated on open.
 import JSZip from 'jszip';
+import { xmlEsc } from './util';
 
 export type Style = 'title' | 'sub' | 'hdr' | 'num' | 'numB' | 'numTot' | 'date' | 'note' | 'bold' | 'wrap' | 'sec' | 'ok' | 'bad' | 'link';
 const STYLE_ID: Record<Style, number> = { title: 1, sub: 2, hdr: 3, num: 4, numB: 5, numTot: 6, date: 7, note: 8, bold: 9, wrap: 10, sec: 11, ok: 12, bad: 13, link: 14 };
@@ -8,7 +9,6 @@ export interface CellObj { v?: string | number | null; f?: string; s?: Style }
 export type C = string | number | null | undefined | CellObj;
 export interface SheetSpec { name: string; rows: C[][]; widths?: number[]; freeze?: { row: number; col?: number }; filter?: { row: number; cols: number }; tab?: string }
 
-const xmlEsc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '');
 export const col = (i: number) => { let s = ''; i++; while (i) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
 /** dd-mm-yyyy → Excel date serial */
 export const serial = (d: string) => { const m = d.match(/^(\d{2})-(\d{2})-(\d{4})$/); return m ? Math.round((Date.UTC(+m[3], +m[2] - 1, +m[1]) - Date.UTC(1899, 11, 30)) / 86400000) : null; };
@@ -77,4 +77,13 @@ export async function writeBook(sheets: SheetSpec[], defined: { name: string; re
   z.file('xl/styles.xml', STYLES);
   sheets.forEach((s, i) => z.file(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)));
   return await z.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+}
+
+/** One-sheet download (Review step "Download this view"): optional title lines, then rows[0] as the header row, frozen and filtered */
+export function simpleXlsx(sheetName: string, rows: any[][], title: string[] = []): Promise<Uint8Array> {
+  const top: C[][] = title.length ? [...title.map((t, i) => [{ v: t, s: (i === 0 ? 'title' : 'sub') as Style }]), []] : [];
+  const header: C[] = (rows[0] || []).map(v => ({ v, s: 'hdr' as Style }));
+  const widths = (rows[0] || []).map((_, j) => Math.min(60, Math.max(10, ...rows.slice(0, 500).map(r => String(r[j] ?? '').length + 2))));
+  const hdrRow = top.length + 1;
+  return writeBook([{ name: sheetName, rows: [...top, header, ...rows.slice(1)], widths, freeze: { row: hdrRow }, filter: rows.length > 1 ? { row: hdrRow, cols: (rows[0] || []).length } : undefined }]);
 }

@@ -1,10 +1,10 @@
 // Minimal, style-preserving writer for the workbook template (edits sheet XML inside the .xlsx zip)
 import JSZip from 'jszip';
+import { xmlEsc } from './util';
 
 /** a value, or { f } for a formula (written without a cached value; the workbook recalculates on open) */
 export type V = string | number | null | undefined | { f: string };
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-  .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+const esc = xmlEsc;
 const colNum = (c: string) => c.split('').reduce((a, ch) => a * 26 + ch.charCodeAt(0) - 64, 0);
 export const colLetter = (n: number) => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
 

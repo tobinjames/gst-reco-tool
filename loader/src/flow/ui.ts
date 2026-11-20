@@ -8,13 +8,11 @@ import { AuditRow, flowWorkbook } from './workbook';
 import { BLOCK_NAME, Comp, Year, yearRecon } from './year';
 import { BridgeLine, Itc3, itcThreeWay } from './itc3';
 import { process2b } from '../gstr2b';
-import { fyShift } from '../util';
+import { esc, fyShift, inr, store } from '../util';
 import { FLOW_GUIDE } from './guide';
 import { readTable } from '../register';
 
-const esc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]);
-const fmt = (v: number) => (Math.abs(v) < 0.005 ? '–' : v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-const store = { get(k: string) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k: string, v: any) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } } };
+const fmt = (v: number) => (Math.abs(v) < 0.005 ? '–' : inr(v));
 const $ = (id: string) => document.getElementById(id)! as any;
 const HK_TXT: Record<HeadK, string> = { IGST: 'IGST', CGST: 'CGST', SGST: 'SGST', CESS: 'Cess', ALL: 'Not split' };
 const BLOCKS: Block[] = ['itc', 'liab', 'cash', 'fee'];

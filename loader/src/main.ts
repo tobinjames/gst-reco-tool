@@ -4,7 +4,7 @@ import templateUrl from '../template/GST_Annual_Return_Workbook.xlsx?inline';
 import itcTemplateUrl from '../template/ITC_Recon_Template.xlsx?inline';
 import { InFile, buildItc, buildWorkbook, classify } from './build';
 import { linesFromItems, parse3b } from './gstr3b';
-import { fyShift } from './util';
+import { esc, fyShift, inr, store } from './util';
 import { generate9 } from './gen9';
 import { Review } from './review';
 import { FlowTab } from './flow/ui';
@@ -67,7 +67,6 @@ async function parsePdf(b: Uint8Array, name: string) {
   return parse3b(linesFromItems(pages), name);
 }
 
-const esc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]);
 const fmtP = (p?: string) => p && p.length === 6 ? `${p.slice(0, 2)}/${p.slice(2)}` : (p || '');
 
 function render() {
@@ -220,7 +219,7 @@ drop2.ondragover = (e: DragEvent) => { e.preventDefault(); drop2.classList.add('
 drop2.ondragleave = () => drop2.classList.remove('over');
 drop2.ondrop = (e: DragEvent) => { e.preventDefault(); drop2.classList.remove('over'); const f = e.dataTransfer?.files?.[0]; if (f) gen(f); };
 $('pick2').onchange = (e: any) => { const f = e.target.files?.[0]; if (f) gen(f); e.target.value = ''; };
-const fmtN = (v: number) => v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtN = inr;
 
 async function gen(file: File) {
   const el = $('gen'); el.innerHTML = '<span class="muted">Reading workbook…</span>';
@@ -265,7 +264,6 @@ async function gen(file: File) {
 // ---------- registers: column mapping
 interface RegState { sheets: RegSheet[]; sheet: number; header: number; kind: RegKind; map: Mapping; d: Record<string, string> }
 const regState = new Map<InFile, RegState>();
-const store = { get(k: string) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k: string, v: any) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } } };
 const sigOf = (st: RegState) => 'jjmap:' + st.kind + ':' + (st.sheets[st.sheet].rows[st.header] || []).map(v => String(v ?? '').trim().toLowerCase()).join('|');
 
 async function initReg(f: InFile) {

@@ -4,6 +4,7 @@ import { contraOf } from './books';
 import { lineSign, ymOfDate } from './portal';
 import { AccHead, AccType, BUCKETS, Block, BookFile, BookLine, COMPONENTS, Component, HEADS, Head, INTERNAL, PORTAL_LABEL, PortalKind, PortalLedger, UNMAPPED, Ym, bucketOf, r2 } from './types';
 import type { ThreeB } from '../gstr3b';
+import { inr } from '../util';
 
 export type HeadK = Head | 'ALL';
 export const HEAD_KEYS: HeadK[] = [...HEADS, 'ALL'];
@@ -455,7 +456,7 @@ export function run(inp: Inputs): Result {
 
   return { books: B, portal: P, flowBooks: fb, flowPortal: fp, balances, items: kept, checks: checks(inp, P, months, warns), warns, monthly, months };
 }
-const fmt = (x: number) => x.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = inr;
 
 // ---------- cross-checks between the portal ledgers, and with GSTR-3B
 function checks(inp: Inputs, P: PEntry[], months: Ym[], warns: Result['warns']): Check[] {

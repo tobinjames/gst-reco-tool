@@ -2,7 +2,8 @@
 // filter suppliers / invoices with totals, match or unmatch by hand, and download the filtered view.
 import { Decisions, InFile, ReconExtra, reconPreview } from './build';
 import { DEFAULT_MATCH, MATCH_PRESETS, MatchOptions } from './recon';
-import { simpleXlsx } from './xlsxmini';
+import { simpleXlsx } from './xlsxbook';
+import { esc, inr, store } from './util';
 
 type Side = 'purchases' | 'sales';
 type View = 'suppliers' | 'invoices';
@@ -29,12 +30,10 @@ const GROUPS = [
 const groupOf = (s: string) => GROUPS.find(g => g.test(s))?.id ?? 'other';
 const n2 = (v: any) => (typeof v === 'number' ? v : v === null || v === undefined || v === '' ? null : +v || 0);
 const r2 = (x: number) => Math.round(x * 100) / 100;
-const esc = (s: any) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as any)[c]);
-const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '' : v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const fmt = (v: number | null | undefined) => (v === null || v === undefined ? '' : inr(v));
 const dayNo = (d: string) => { const m = String(d).match(/^(\d{2})-(\d{2})-(\d{4})$/); return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) / 86400000 : NaN; };
 const isoToDay = (s: string) => (s ? Date.parse(s) / 86400000 : NaN);
 const cloneD = (d: Decisions): Decisions => ({ manual: new Map([...d.manual].map(([k, v]) => [k, { b: new Set(v.b), r: new Set(v.r) }])), keepApart: new Set(d.keepApart) });
-const store = { get(k: string) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch { return null; } }, set(k: string, v: any) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } } };
 
 function itemsOf(side: Side, rows: any[][]): Item[] {
   const ids = (id: string) => { const [b = '', r = ''] = String(id).split('~'); return { bIds: b ? b.split(',') : [], rIds: r ? r.split(',') : [] }; };

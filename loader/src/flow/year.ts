@@ -3,6 +3,7 @@
 // books + journals vs portal. Built on the engine's month-wise cells (engine.ts) so every figure ties to the lines.
 import { AccType, Block, HEADS, INTERNAL, UNMAPPED, Ym, bucketOf } from './types';
 import { HEAD_KEYS, HeadK, Inputs, Result, blockOfType, ymLabel } from './engine';
+import { inr } from '../util';
 
 export type Kind = 'invoice' | 'itc' | 'journal' | 'setup';
 export interface Comp {
@@ -24,7 +25,7 @@ const zero = (): Record<HeadK, number> => ({ IGST: 0, CGST: 0, SGST: 0, CESS: 0,
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const nz = (x: number) => Math.abs(x) > 0.5;
 const tot = (a: Record<HeadK, number>) => r2(HEAD_KEYS.reduce((s, h) => s + a[h], 0));
-const fmt = (x: number) => x.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = inr;
 export const BLOCK_NAME: Record<Block, string> = { itc: 'Input tax credit', liab: 'Tax payable', cash: 'Electronic cash ledger', fee: 'Interest, late fee and penalty' };
 
 /** comparison lines: the portal shows ITC net of reversals and output tax net of credit notes, so those rows are compared together */
