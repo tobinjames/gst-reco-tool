@@ -1266,6 +1266,46 @@
         padding: 3px 10px;
         border-radius: 999px;
       }
+      /* revenue reco chart */
+      .rvchart {
+        margin: 6px 0 14px;
+      }
+      .rvchart svg {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .rvchart .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        font-size: 12.5px;
+        color: var(--strong);
+        margin-bottom: 6px;
+      }
+      .rvchart .legend i {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        margin-right: 6px;
+        vertical-align: -1px;
+      }
+      .rvchart .ax {
+        font-size: 10.5px;
+        fill: var(--muted);
+      }
+      .rvchart .gl {
+        stroke: var(--line);
+        stroke-width: 1;
+      }
+      .rvchart .zl {
+        stroke: var(--line-2);
+        stroke-width: 1;
+      }
+      .rvchart rect:hover {
+        opacity: 0.8;
+      }
       /* ledger flow */
       table.fl td,
       table.fl th {
@@ -1510,7 +1550,7 @@
         </svg>
         <div class="brandname"><b>GST Reco Loader</b><span>James &amp; James LLP · Taxation</span></div>
         <div class="spacer"></div>
-        <span class="pill v">v0.9</span>
+        <span class="pill v">v0.11</span>
         <span class="pill"
           ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
             <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -1523,6 +1563,7 @@
           <button class="tab" role="tab" data-tab="itc"><b>Input Reco</b><span>GSTR-2B vs purchases</span></button>
           <button class="tab" role="tab" data-tab="annual"><b>Annual return</b><span>GSTR-9 / 9C</span></button>
           <button class="tab" role="tab" data-tab="flow"><b>GST ledger flow</b><span>Portal ledgers vs books</span></button>
+          <button class="tab" role="tab" data-tab="revenue"><b>Revenue reco</b><span>Books vs GSTR-1 vs 3B</span></button>
         </div>
       </nav>
     </header>
@@ -1531,7 +1572,7 @@
       <p id="heroP"></p>
     </section>
     <main>
-      <section class="card" data-tabs="itc annual flow">
+      <section class="card" data-tabs="itc annual flow revenue">
         <h2><span class="num">1</span> Add files <span class="muted shared">shared by all tabs</span></h2>
         <div id="drop">
           <b>Drop files here</b> or click to choose<br /><span class="muted"
@@ -1670,7 +1711,7 @@
                 </ul>
               </div>
               <div class="gitem">
-                <h4>Sales register <span class="gfor">Annual</span></h4>
+                <h4>Sales register <span class="gfor">Annual · Revenue</span></h4>
                 <ol>
                   <li><b>Display More Reports → Account Books → Sales Register</b>.</li>
                   <li>
@@ -1721,7 +1762,7 @@
                 </ol>
               </div>
               <div class="gitem">
-                <h4>Invoices (sales) <span class="gfor">Annual</span></h4>
+                <h4>Invoices (sales) <span class="gfor">Annual · Revenue</span></h4>
                 <ol>
                   <li><b>Sales → Invoices</b> → menu (☰) → <b>Export Invoices</b>, date range, XLSX → Export.</li>
                   <li>For credit notes: <b>Sales → Credit Notes</b> → Export.</li>
@@ -1785,7 +1826,7 @@
           <div id="files" style="margin-top: 10px"></div>
         </details>
       </section>
-      <section class="card" id="regcard" data-tabs="itc annual" data-sub="b" style="display: none">
+      <section class="card" id="regcard" data-tabs="itc annual revenue" data-sub="b" style="display: none">
         <h2><span class="num">2b</span> Map register columns</h2>
         <p class="muted" style="margin-top: -8px">
           Tell the Loader which column holds what. Amount fields take several columns for Tally columnar registers (they are
@@ -1802,7 +1843,7 @@
         </p>
         <div id="sups"></div>
       </section>
-      <section class="card" data-tabs="itc annual flow">
+      <section class="card" data-tabs="itc annual flow revenue">
         <h2><span class="num">3</span> Confirm client &amp; year</h2>
         <div class="row">
           <label>Financial year<select id="fy"></select></label>
@@ -1881,6 +1922,41 @@
           <button id="flBuild" disabled>Build GST flow workbook</button><span id="flStatus" class="muted"></span>
         </div>
         <div id="flResult" style="margin-top: 14px"></div>
+      </section>
+      <section class="card" data-tabs="revenue" id="rv-books">
+        <h2><span class="num">3</span> Books: sales register or revenue ledgers</h2>
+        <p class="muted">
+          The sales register is used when there is one. Only without it are invoices built from a day book / GL dump or detailed
+          ledgers, from the revenue ledgers you confirm here.
+        </p>
+        <div id="rvBooks"></div>
+      </section>
+      <section class="card" data-tabs="revenue" id="rv-dash">
+        <h2><span class="num">4</span> Dashboard</h2>
+        <div id="rvDash"></div>
+      </section>
+      <section class="card" data-tabs="revenue" id="rv-st1">
+        <h2><span class="num">5</span> Reconciliation: books to GSTR-1</h2>
+        <div id="rvSt1"></div>
+      </section>
+      <section class="card" data-tabs="revenue" id="rv-st2">
+        <h2><span class="num">6</span> Reconciliation: GSTR-1 to GSTR-3B</h2>
+        <div id="rvSt2"></div>
+      </section>
+      <section class="card" data-tabs="revenue" id="rv-items">
+        <h2><span class="num">7</span> Entries and reasons</h2>
+        <p class="muted">
+          Every invoice, credit note, B2CS and Table 8 row with its books and GSTR-1 side. Filter by customer, type, month, date
+          or reason, select entries and set a reason for all of them at once.
+        </p>
+        <div id="rvItems"></div>
+      </section>
+      <section class="card" data-tabs="revenue" id="rv-build">
+        <h2><span class="num">8</span> Build workbook</h2>
+        <div class="row">
+          <button id="rvBuild" disabled>Build revenue reconciliation</button><span id="rvStatus" class="muted"></span>
+        </div>
+        <div id="rvResult" style="margin-top: 14px"></div>
       </section>
     </main>
     <footer>

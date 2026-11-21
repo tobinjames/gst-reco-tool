@@ -34,6 +34,7 @@ export type Kind =
   | 'Register'
   | 'Portal ledger'
   | 'Books ledger'
+  | 'Revenue workbook'
   | 'Unknown';
 export interface InFile {
   name: string;
@@ -107,6 +108,8 @@ async function classifyInner(
       try {
         const rd = await Reader.open(bytes);
         if (rd.has('RAW_GSTR1') && rd.has('Basic')) return [{ name, kind: 'Workbook', bytes, note: 'Annual return workbook' }];
+        if (rd.has('Rev_Items') && rd.has('Books_to_GSTR1'))
+          return [{ name, kind: 'Revenue workbook', bytes, note: 'Revenue reconciliation workbook: your reasons are read back' }];
         if (rd.has('_ITC') && rd.has('Recon_Purchases'))
           return [{ name, kind: 'Workbook', bytes, note: 'ITC reconciliation workbook' }];
       } catch {

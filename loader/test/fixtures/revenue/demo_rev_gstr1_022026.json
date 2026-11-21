@@ -1,0 +1,92 @@
+{
+ "gstin": "32AAACJ1234K1Z5",
+ "fp": "022026",
+ "b2b": [
+  {
+   "ctin": "32AAACK1111A1Z1",
+   "inv": [
+    {
+     "inum": "SAL/0201",
+     "idt": "15-02-2026",
+     "val": 118000.0,
+     "pos": "32",
+     "rchrg": "N",
+     "inv_typ": "R",
+     "itms": [
+      {
+       "num": 1801,
+       "itm_det": {
+        "rt": 18,
+        "txval": 100000,
+        "iamt": 0,
+        "camt": 9000.0,
+        "samt": 9000.0,
+        "csamt": 0
+       }
+      }
+     ]
+    },
+    {
+     "inum": "X/77",
+     "idt": "10-02-2026",
+     "val": 17700.0,
+     "pos": "32",
+     "rchrg": "N",
+     "inv_typ": "R",
+     "itms": [
+      {
+       "num": 1801,
+       "itm_det": {
+        "rt": 18,
+        "txval": 15000,
+        "iamt": 0,
+        "camt": 1350.0,
+        "samt": 1350.0,
+        "csamt": 0
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ctin": "33AAACC2222B1Z2",
+   "inv": [
+    {
+     "inum": "SAL/0202",
+     "idt": "15-02-2026",
+     "val": 59000.0,
+     "pos": "33",
+     "rchrg": "N",
+     "inv_typ": "R",
+     "itms": [
+      {
+       "num": 1801,
+       "itm_det": {
+        "rt": 18,
+        "txval": 50000,
+        "iamt": 9000.0,
+        "camt": 0,
+        "samt": 0,
+        "csamt": 0
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "b2cs": [
+  {
+   "sply_ty": "INTRA",
+   "pos": "32",
+   "typ": "OE",
+   "rt": 18,
+   "txval": 40000,
+   "iamt": 0,
+   "camt": 3600.0,
+   "samt": 3600.0,
+   "csamt": 0
+  }
+ ]
+}

@@ -2,7 +2,7 @@ import { nameKey } from './suppliers';
 // Invoice-level reconciliation: purchase register vs GSTR-2B, sales register vs GSTR-1
 import { fyOfDate, r2 } from './util';
 
-const normNo = (s: any) =>
+export const normNo = (s: any) =>
   String(s ?? '')
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');

@@ -8,6 +8,7 @@ import { esc, fyShift, inr, store } from './util';
 import { generate9 } from './gen9';
 import { Review } from './review';
 import { FlowTab } from './flow/ui';
+import { RevenueTab } from './revenue/ui';
 import { applyAliases, supplierSuggestions, suppliersFrom2B } from './suppliers';
 import {
   FieldDef,
@@ -39,12 +40,12 @@ document.querySelectorAll('button.gtab').forEach(
     }),
 );
 let files: InFile[] = [];
-type Tab = 'itc' | 'annual' | 'flow';
+type Tab = 'itc' | 'annual' | 'flow' | 'revenue';
 type Mode = 'itc' | 'annual';
 let tab: Tab = (() => {
   try {
     const t = localStorage.getItem('jjmode') as Tab;
-    return ['itc', 'annual', 'flow'].includes(t) ? t : 'annual';
+    return ['itc', 'annual', 'flow', 'revenue'].includes(t) ? t : 'annual';
   } catch {
     return 'annual';
   }
@@ -59,6 +60,11 @@ const HERO: Record<Tab, [string, string, string]> = {
     'Annual return <em>loader</em>',
     'GSTR-1, 2B, 3B and the registers into the GSTR-9 / 9C workbook, and the finished workbook back into the GSTR-9 upload JSON.',
     'GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Oct) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it',
+  ],
+  revenue: [
+    'Revenue <em>reconciliation</em>',
+    'Books against GSTR-1 against GSTR-3B for the year: a dashboard, a statement from books to GSTR-1 and from GSTR-1 to 3B, and the reason for every difference.',
+    'GSTR-1 JSON / ZIP (every month of the year, and April–October of the next year) · GSTR-3B PDFs · sales register (.xlsx / .csv, any format), or a day book / GL dump if there is no proper sales register · optionally your saved revenue workbook to keep your reasons',
   ],
   flow: [
     'GST <em>ledger flow</em>',
@@ -133,6 +139,7 @@ function render() {
     'Register',
     'Portal ledger',
     'Books ledger',
+    'Revenue workbook',
     'GSTR-9 (portal)',
     'GSTR-3B',
     'GSTR-1',
@@ -187,6 +194,7 @@ function render() {
   renderCoverage();
   renderRegisters();
   flow.refresh();
+  revenue.refresh();
 }
 
 // ---------- month-wise coverage grid
@@ -218,6 +226,10 @@ function renderCoverage() {
     : '';
   if (tab === 'flow') {
     el.innerHTML = flow.coverageHtml() + othHtml;
+    return;
+  }
+  if (tab === 'revenue') {
+    el.innerHTML = revenue.coverageHtml() + othHtml;
     return;
   }
   if (tab === 'itc') {
@@ -295,6 +307,7 @@ function renderCoverage() {
     renderCoverage();
     renderRegisters();
     flow.refresh();
+    revenue.refresh();
   }),
 );
 
@@ -847,7 +860,7 @@ function renderSuppliers() {
 
 // ---------- review matches (step 4): runs the reconciliation in the page; settings and manual decisions go into the build
 const review = new Review($('rvcard'), $('rv'), () => {
-  if (!files.length || tab === 'flow') return null;
+  if (!files.length || tab === 'flow' || tab === 'revenue') return null;
   let regs: any;
   try {
     regs = registerRows($('fy').value);
@@ -927,5 +940,16 @@ const flow = new FlowTab(
   }),
   () => render(),
 );
+
+// ---------- revenue reconciliation tab
+const revenue = new RevenueTab(() => ({
+  files: activeFiles(),
+  fy: $('fy').value,
+  gstin: clientGstin(),
+  legal: String($('legal').value || '').trim(),
+  active: tab === 'revenue',
+  salesRows: () => registerRows($('fy').value, true).sales,
+  match: () => review.extra().match,
+}));
 
 setTab(tab);
