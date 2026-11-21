@@ -79,18 +79,37 @@ export const xmlEsc = (s: any) =>
     );
 /** 1,23,456.70 (Indian grouping, two decimals) */
 export const inr = (v: number) => v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-/** settings remembered in this browser (JSON); never throws, e.g. in a private window */
+/** settings remembered in this browser (JSON); never throws. Where the browser keeps nothing (a private window,
+ * storage blocked), values are held in memory for this visit, so a restored workpaper still applies. */
+const mem = new Map<string, string>();
 export const store = {
   get(k: string) {
+    let raw: string | null = null;
     try {
-      return JSON.parse(localStorage.getItem(k) || 'null');
+      raw = localStorage.getItem(k);
+    } catch {
+      /* storage unavailable */
+    }
+    if (raw === null) raw = mem.get(k) ?? null;
+    try {
+      return JSON.parse(raw || 'null');
     } catch {
       return null;
     }
   },
   set(k: string, v: any) {
+    const raw = JSON.stringify(v);
+    mem.set(k, raw);
     try {
-      localStorage.setItem(k, JSON.stringify(v));
+      localStorage.setItem(k, raw);
+    } catch {
+      /* storage unavailable */
+    }
+  },
+  del(k: string) {
+    mem.delete(k);
+    try {
+      localStorage.removeItem(k);
     } catch {
       /* storage unavailable */
     }
