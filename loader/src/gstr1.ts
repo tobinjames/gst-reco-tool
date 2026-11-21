@@ -291,13 +291,15 @@ function keyFor(d: Doc, cy: string, ny: string): string {
         return '';
     }
   }
-  // Credit notes in next-FY returns dated Apr–Nov of next FY may relate to this FY's supplies (Table 11, per ICAI TG) - cannot be
+  // Next-FY returns count only for April to October (filed up to 30 November): ICAI TG on GSTR-9, Dec 2025, FAQ 3 and Tables 10/11
+  const pm = +String(d.period ?? '').slice(0, 2);
+  const nyWindow = pm >= 4 && pm <= 10;
+  // Credit notes in those returns may relate to this FY's supplies (Table 11) - cannot be
   // tied to an invoice automatically, so they are tagged for review and not counted
-  if (d.rfy === ny && d.dfy === ny && credit && (d.family === 'CDN' || d.family === 'CDNUR') && !d.amended) {
-    const m = +(d.date || '').split(/[-/]/)[1];
-    if (m >= 4 && m <= 11) return '11-REVIEW';
-  }
+  if (d.rfy === ny && nyWindow && d.dfy === ny && credit && (d.family === 'CDN' || d.family === 'CDNUR') && !d.amended)
+    return '11-REVIEW';
   if (d.rfy === ny && d.dfy === cy && d.dfy) {
+    if (!nyWindow) return '';
     if (['B2CS', 'AT', 'TXP', 'NIL', 'ECO', 'ECO-TCS'].includes(d.family)) return '';
     return credit ? '11' : '10';
   }
@@ -422,7 +424,7 @@ export function processGstr1(files: G1File[], cy: string, ny: string, warns: War
     warns.push({
       level: 'warn',
       file: '',
-      msg: `${rev.length} credit note(s) in next-FY GSTR-1 (Apr–Nov) totalling taxable ${r2(rev.reduce((a, r) => a + r.amt[0], 0)).toLocaleString('en-IN')} are tagged 11-REVIEW in RAW_GSTR1. If they relate to this FY's supplies, add them to Table 11 (adjustment column).`,
+      msg: `${rev.length} credit note(s) in next-FY GSTR-1 (Apr–Oct) totalling taxable ${r2(rev.reduce((a, r) => a + r.amt[0], 0)).toLocaleString('en-IN')} are tagged 11-REVIEW in RAW_GSTR1. If they relate to this FY's supplies, add them to Table 11 (adjustment column).`,
     });
   return { rows, hsn: hsnRows, docs: all };
 }

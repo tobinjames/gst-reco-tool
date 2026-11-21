@@ -18,9 +18,10 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
     if (bfy !== cy && bfy !== ny) {
       warns.push({ level: 'info', file: f.name, msg: `2B period ${prd} is outside ${cy} / ${ny}; rows kept but not counted` });
     }
-    // within next FY, only Apr-Nov 2B matters for this FY's ITC (sec 16(4) - 30 Nov)
+    // within next FY, only the April-October 2B counts for this FY's 8A (sec 16(4): returns filed up to 30 November;
+    // ICAI TG on GSTR-9, Dec 2025, FAQ 3)
     const nyMonth = +prd.slice(0, 2);
-    const nyInWindow = bfy === ny && nyMonth >= 4 && nyMonth <= 11;
+    const nyInWindow = bfy === ny && nyMonth >= 4 && nyMonth <= 10;
     const dd = d.docdata || {};
     const emit = (
       section: string,

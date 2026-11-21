@@ -342,12 +342,12 @@ export async function buildWorkbook(
   const { rows: r2b, periods } = process2b(b2, fy, py, ny, warns);
   if (!keep(b2.length)) await wb.writeRows('RAW_2B', 6, r2b.map(row));
   const fmtM = (l: string[]) => l.map(m => m.slice(0, 2) + '/' + m.slice(2)).join(', ');
-  const nyMonths = [4, 5, 6, 7, 8, 9, 10, 11].map(m => String(m).padStart(2, '0') + ny.slice(0, 4));
+  const nyMonths = [4, 5, 6, 7, 8, 9, 10].map(m => String(m).padStart(2, '0') + ny.slice(0, 4));
   const missing2b = months.filter(m => !periods.includes(m));
   if (missing2b.length) warns.push({ level: 'error', file: '', msg: `GSTR-2B ${fy} missing for: ${fmtM(missing2b)}` });
   const missing2bNy = nyMonths.filter(m => !periods.includes(m));
   if (missing2bNy.length)
-    warns.push({ level: 'warn', file: '', msg: `GSTR-2B ${ny} (Apr–Nov, for 8A/8C/13) missing for: ${fmtM(missing2bNy)}` });
+    warns.push({ level: 'warn', file: '', msg: `GSTR-2B ${ny} (Apr–Oct, for 8A/8C/13) missing for: ${fmtM(missing2bNy)}` });
   // GSTR-1: quarterly returns cover their whole quarter
   const g1cov = new Set<string>();
   for (const f of files.filter(x => x.kind === 'GSTR-1')) {
@@ -361,7 +361,7 @@ export async function buildWorkbook(
   if (missing1.length) warns.push({ level: 'error', file: '', msg: `GSTR-1 ${fy} missing for: ${fmtM(missing1)}` });
   const missing1Ny = nyMonths.filter(m => !g1cov.has(m));
   if (missing1Ny.length)
-    warns.push({ level: 'warn', file: '', msg: `GSTR-1 ${ny} (Apr–Nov, for Tables 10/11) missing for: ${fmtM(missing1Ny)}` });
+    warns.push({ level: 'warn', file: '', msg: `GSTR-1 ${ny} (Apr–Oct, for Tables 10/11) missing for: ${fmtM(missing1Ny)}` });
   if (!p9Present(files))
     warns.push({ level: 'warn', file: '', msg: 'Portal GSTR-9 JSON not loaded - Pre-filled (Portal) columns will be blank' });
 
