@@ -1,6 +1,6 @@
 # GST Annual Return & ITC Reconciliation Tool — Handover
 
-James & James LLP · built 20 Nov 2026 · Loader v0.11 (revenue reco added 21 Nov 2026), workbook template 2026.11.20-7
+James & James LLP · built 20 Nov 2026 · Loader v0.12 (matching settings per tab, 21 Nov 2026), workbook template 2026.11.20-7
 
 ## What it is
 Two pieces:
@@ -106,6 +106,23 @@ Top-level tabs (Input Reco, Annual return, GST ledger flow) replace the mode car
 - Tests: test/revenue.test.ts on test/fixtures/revenue (make_revenue_fixtures.py: nine planted differences, register and GL routes);
   `python3 scripts/flow_recalc.py <workbook>` works for this workbook too (1,020 formulas, 0 mismatches on the demo).
 - Not done: GSTR-1A, e-invoice / e-way bill data (agreed to leave out), multi-GSTIN, 3B JSON (PDFs only), HSN-wise comparison.
+
+## Matching settings (v0.12, asked by Tobin 21 Nov 2026)
+- Every tab has a "Matching settings" step (src/settings.ts, card #setcard) after Confirm client & year and before any matching.
+  Tab order is now Input Reco, GST ledger flow, Revenue reco, Annual return (last). Settings are kept in the browser per tab
+  (`jjset:<tab>`; the old shared `jjmatch` seeds Input Reco and Annual return), each section shows an "In use" line, and the
+  same lines (`describe()`) go into the Read Me of the flow and revenue workbooks (Recon sheets keep describeMatch in G3).
+- Input Reco / Annual return: the invoice rules, presets, tolerance ₹ / %, date window, amounts compared (moved out of Review
+  matches, which now only says what it matched with) and the supplier-name similarity for suggestions.
+- GST ledger flow: equal-within ₹ (engine TOL), which rules may explain a difference (netted on portal, tax head, timing,
+  after the period, fee booked to tax; Inputs.opts.rules), timing windows (same entry up to 3 months, month totals up to 2),
+  and the invoice rules for ITC three ways (itcThreeWay match). The structural "compared in total" head item always runs.
+- Revenue reco: the invoice rules (no supplier totals) and how a books customer without a GSTIN gets one, in this order:
+  your choice, customer list, same name in books (bookKeys: names that carry the GSTIN on other entries), invoice no. AND
+  amount agreeing with GSTR-1 documents of exactly one GSTIN (applied without asking, or suggested only; minimum invoices).
+  resolveCustomers() returns the GSTIN and basis per name; step 4b lists mapped customers with the basis and the agreeing
+  invoices, "not right? choose" stores '?' (no automatic mapping); the Customer_Map sheet carries the same. A number that agrees
+  with a different amount is shown but never maps.
 
 ## Key decisions (agreed with Tobin)
 - No macros and no Excel 365 functions (SUMIFS/INDEX/MATCH only). The browser does the parsing, because Power Query "From PDF" isn't available to every user.

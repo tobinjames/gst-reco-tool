@@ -9,6 +9,7 @@ import { generate9 } from './gen9';
 import { Review } from './review';
 import { FlowTab } from './flow/ui';
 import { RevenueTab } from './revenue/ui';
+import { SettingsCard } from './settings';
 import { applyAliases, supplierSuggestions, suppliersFrom2B } from './suppliers';
 import {
   FieldDef,
@@ -45,9 +46,9 @@ type Mode = 'itc' | 'annual';
 let tab: Tab = (() => {
   try {
     const t = localStorage.getItem('jjmode') as Tab;
-    return ['itc', 'annual', 'flow', 'revenue'].includes(t) ? t : 'annual';
+    return ['itc', 'annual', 'flow', 'revenue'].includes(t) ? t : 'itc';
   } catch {
-    return 'annual';
+    return 'itc';
   }
 })();
 const HERO: Record<Tab, [string, string, string]> = {
@@ -100,6 +101,7 @@ function setTab(t: Tab) {
   $('dropHint').textContent = HERO[t][2];
   $('build').textContent = t === 'itc' ? 'Build ITC reconciliation' : 'Build workbook';
   $('result').innerHTML = '';
+  settings.render(t);
   render();
 }
 document.querySelectorAll('button.tab').forEach((b: any) => (b.onclick = () => setTab(b.dataset.tab)));
@@ -781,7 +783,7 @@ function renderSuppliers() {
   const pur = b2.length ? registerRows($('fy').value, true).purchases : undefined;
   queueMicrotask(() => review.refresh()); // after module init (review is declared further down)
   const sup2b = b2.length ? suppliersFrom2B(b2.map(f => f.json)) : new Map();
-  const sug = pur ? supplierSuggestions(pur, sup2b) : [];
+  const sug = pur ? supplierSuggestions(pur, sup2b, settings.get(mode()).supNameMin / 100) : [];
   const allSup = [...sup2b.values()].sort((a, b) => (a.name || a.gstin).localeCompare(b.name || b.gstin));
   const exact = sug.filter(x => x.exact),
     approx = sug.filter(x => !x.exact);
@@ -860,21 +862,33 @@ function renderSuppliers() {
 }
 
 // ---------- review matches (step 4): runs the reconciliation in the page; settings and manual decisions go into the build
-const review = new Review($('rvcard'), $('rv'), () => {
-  if (!files.length || tab === 'flow' || tab === 'revenue') return null;
-  let regs: any;
-  try {
-    regs = registerRows($('fy').value);
-  } catch (e: any) {
-    regs = e.message;
-  }
-  return {
-    files: activeFiles().filter(f => f.kind !== 'Portal ledger' && f.kind !== 'Books ledger'),
-    fy: $('fy').value,
-    mode: mode(),
-    regs,
-  };
+// ---------- matching settings (step before any matching, one set per tab)
+const settings = new SettingsCard($('settings'), t => {
+  if (t !== tab) return;
+  if (t === 'flow') flow.refresh();
+  else if (t === 'revenue') revenue.refresh();
+  else renderSuppliers(); // refreshes the review too
 });
+const review = new Review(
+  $('rvcard'),
+  $('rv'),
+  () => {
+    if (!files.length || tab === 'flow' || tab === 'revenue') return null;
+    let regs: any;
+    try {
+      regs = registerRows($('fy').value);
+    } catch (e: any) {
+      regs = e.message;
+    }
+    return {
+      files: activeFiles().filter(f => f.kind !== 'Portal ledger' && f.kind !== 'Books ledger'),
+      fy: $('fy').value,
+      mode: mode(),
+      regs,
+    };
+  },
+  () => settings.get(mode()).match,
+);
 
 // ---------- monthly mode build
 async function buildItcNow(fy: string) {
@@ -938,6 +952,7 @@ const flow = new FlowTab(
     legal: String($('legal').value || '').trim(),
     active: tab === 'flow',
     register: () => registerRows($('fy').value, true).purchases,
+    settings: () => settings.get('flow'),
   }),
   () => render(),
 );
@@ -950,7 +965,8 @@ const revenue = new RevenueTab(() => ({
   legal: String($('legal').value || '').trim(),
   active: tab === 'revenue',
   salesRows: () => registerRows($('fy').value, true).sales,
-  match: () => review.extra().match,
+  match: () => settings.get('revenue').match,
+  cust: () => settings.get('revenue').cust,
 }));
 
 setTab(tab);

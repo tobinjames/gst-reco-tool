@@ -1,7 +1,8 @@
 // Review step: run the reconciliation in the browser before building, let the user change how documents are matched,
 // filter suppliers / invoices with totals, match or unmatch by hand, and download the filtered view.
 import { Decisions, InFile, ReconExtra, reconPreview } from './build';
-import { DEFAULT_MATCH, MATCH_PRESETS, MatchOptions } from './recon';
+import { DEFAULT_MATCH, MatchOptions } from './recon';
+import { describeInvoices } from './settings';
 import { simpleXlsx } from './xlsxbook';
 import { esc, inr, store } from './util';
 
@@ -162,7 +163,6 @@ const newFilters = (): Filters => ({
 });
 
 export class Review {
-  private match: MatchOptions = { ...DEFAULT_MATCH, rules: { ...DEFAULT_MATCH.rules }, ...(store.get('jjmatch') || {}) };
   private decisions: Partial<Record<Side, Decisions>> = {};
   private sig = '';
   private history: { side: Side; label: string; prev: Decisions }[] = [];
@@ -181,8 +181,11 @@ export class Review {
     private card: HTMLElement,
     private box: HTMLElement,
     private inputs: () => ReviewInputs | null,
-  ) {
-    if (store.get('jjmatch')?.rules) this.match.rules = { ...DEFAULT_MATCH.rules, ...store.get('jjmatch').rules };
+    /** the tab's matching options, set under "Matching settings" */
+    private matchOf: () => MatchOptions = () => DEFAULT_MATCH,
+  ) {}
+  private get match(): MatchOptions {
+    return this.matchOf();
   }
 
   /** what the build needs: matching options and the user's decisions (only once the review has run) */
@@ -575,28 +578,7 @@ export class Review {
       f = this.f[this.side],
       m = this.match,
       all = this.items[this.side] || [];
-    const rule = (k: keyof MatchOptions['rules'], label: string, hint: string) =>
-      `<label class="tg" title="${esc(hint)}"><input type="checkbox" data-rule="${k}" ${m.rules[k] ? 'checked' : ''}/> ${label}</label>`;
-    const preset = Object.entries(MATCH_PRESETS).find(([, p]) => JSON.stringify(p) === JSON.stringify(m))?.[0] ?? 'Custom';
-    const settings = `<details class="rv-set" ${store.get('jjmatchOpen') ? 'open' : ''}><summary><b>How documents are matched</b> <span class="tag">${preset}</span> <span class="muted">tolerance ₹${m.tol}${m.pct ? ` / ${m.pct}%` : ''} · dates ±${m.days} days · ${m.compare === 'tax' ? 'tax only' : 'taxable + tax'}</span></summary>
-      <div class="rv-set-in">
-        <div class="row" style="gap:8px">${Object.keys(MATCH_PRESETS)
-          .map(p => `<button class="gtab ${p === preset ? 'on' : ''}" data-preset="${p}">${p}</button>`)
-          .join('')}</div>
-        <div class="rv-rules"><span class="muted">Manual matches always come first. Then, in this order:</span>
-          ${rule('exact', '1 · Same invoice no.', 'Same GSTIN and invoice number, ignoring punctuation, spaces and case')}
-          ${rule('digits', '2 · Same digits of no.', 'Same GSTIN, the digits of the invoice number agree (INV-0045 = 45), amounts within tolerance')}
-          ${rule('tail', '3 · Last digits of no.', 'Same GSTIN, one number ends with the other (or the last 3+ digits agree), amounts within tolerance')}
-          ${rule('dateAmt', '4 · GSTIN + date + amount', 'Same GSTIN, dates within the window, same taxable value and tax - number ignored')}
-          ${rule('otherGstin', '5 · No. + amount, GSTIN differs', 'Same invoice number and amount, but the supplier GSTIN differs')}
-          ${this.side === 'purchases' ? rule('supplierTotal', '6 · Supplier totals', "A supplier's leftover documents agree in total on both sides") : ''}</div>
-        <div class="row">
-          <label>Tolerance ₹<input type="number" min="0" step="0.5" data-opt="tol" value="${m.tol}" style="min-width:0;width:110px"/></label>
-          <label>Tolerance % (rules 2–3)<input type="number" min="0" step="0.5" data-opt="pct" value="${m.pct}" style="min-width:0;width:110px"/></label>
-          <label>Date window ± days (rule 4)<input type="number" min="0" step="1" data-opt="days" value="${m.days}" style="min-width:0;width:110px"/></label>
-          <label>Amounts compared<select data-opt="compare"><option value="both" ${m.compare === 'both' ? 'selected' : ''}>Taxable value and tax</option><option value="tax" ${m.compare === 'tax' ? 'selected' : ''}>Tax only</option></select></label>
-        </div>
-      </div></details>`;
+    const settings = `<p class="muted small" style="margin:0 0 6px">Matched with: ${esc(describeInvoices(m, this.side === 'purchases'))}. Change it under Matching settings.</p>`;
     // KPI tiles (whole side, not filtered)
     const kp = (g: string, label: string, cls = '') => {
       const l = all.filter(x => x.group === g || (g === 'matched' && ['matched', 'other', 'manual'].includes(x.group)));
@@ -729,34 +711,6 @@ export class Review {
     const b = this.box,
       f = this.f[this.side];
     const q = (s: string) => b.querySelectorAll(s) as NodeListOf<any>;
-    const saveMatch = () => {
-      store.set('jjmatch', this.match);
-      this.refresh(0);
-    };
-    (b.querySelector('details.rv-set') as any).ontoggle = (e: any) => store.set('jjmatchOpen', e.target.open);
-    q('[data-preset]').forEach(
-      el =>
-        (el.onclick = () => {
-          const p = MATCH_PRESETS[el.dataset.preset];
-          this.match = { ...p, rules: { ...p.rules } };
-          saveMatch();
-        }),
-    );
-    q('[data-rule]').forEach(
-      el =>
-        (el.onchange = () => {
-          (this.match.rules as any)[el.dataset.rule] = el.checked;
-          saveMatch();
-        }),
-    );
-    q('[data-opt]').forEach(
-      el =>
-        (el.onchange = () => {
-          const k = el.dataset.opt;
-          (this.match as any)[k] = k === 'compare' ? el.value : Math.max(0, +el.value || 0);
-          saveMatch();
-        }),
-    );
     q('[data-side]').forEach(
       el =>
         (el.onclick = () => {

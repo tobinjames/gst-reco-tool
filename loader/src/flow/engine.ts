@@ -27,7 +27,8 @@ import { inr } from '../util';
 
 export type HeadK = Head | 'ALL';
 export const HEAD_KEYS: HeadK[] = [...HEADS, 'ALL'];
-const TOL = 1;
+/** amounts within this many rupees are equal (Matching settings; set at the start of run) */
+let TOL = 1;
 
 export interface AccMapEntry {
   type: AccType;
@@ -52,6 +53,13 @@ export interface Inputs {
     portal: Partial<Record<PortalKind, Partial<Record<Head, { opening?: number }>>>>;
   };
   threeB?: ThreeB[];
+  /** Matching settings: tolerance, which rules explain differences, timing windows (defaults: all on, ₹1, 3 / 2 months) */
+  opts?: {
+    tol?: number;
+    rules?: Partial<Record<'netted' | 'head' | 'timing' | 'after' | 'fee', boolean>>;
+    entryMonths?: number;
+    monthGap?: number;
+  };
 }
 
 /** a classified books line */
@@ -246,6 +254,10 @@ function ruleBucket(type: AccType, effect: number, contra: Set<string>, vt: stri
 }
 
 export function run(inp: Inputs): Result {
+  TOL = inp.opts?.tol ?? 1;
+  const RULE = { netted: true, head: true, timing: true, after: true, fee: true, ...(inp.opts?.rules || {}) };
+  const ENTRY_GAP = Math.max(1, inp.opts?.entryMonths ?? 3),
+    MONTH_GAP = Math.max(1, inp.opts?.monthGap ?? 2);
   const warns: Result['warns'] = [];
   const months = monthsOf(inp.fy).filter(m => m >= inp.from && m <= inp.to);
   const where = (m: Ym): 'before' | 'in' | 'after' => (!m ? 'in' : m < inp.from ? 'before' : m > inp.to ? 'after' : 'in');
@@ -635,7 +647,7 @@ export function run(inp: Inputs): Result {
     ['itc_reclaimed', 'itc_availed', 'Reclaimed ITC is part of "ITC accrued" on the credit ledger'],
     ['out_cn', 'out_tax', 'Credit notes booked separately in books; on the portal output tax is net of credit notes'],
   ];
-  for (const [a, bk, text] of NET)
+  for (const [a, bk, text] of RULE.netted ? NET : [])
     for (const h of HEAD_KEYS)
       for (const m of months) {
         const ra = res(a, h, m),
@@ -655,7 +667,7 @@ export function run(inp: Inputs): Result {
         take(bk, h, m, it2.amt[h]);
       }
   // 3. tax head differs (IGST vs CGST + SGST; CGST vs SGST): same row and month, amounts that offset
-  for (const k of keysOf())
+  for (const k of RULE.head ? keysOf() : [])
     for (const m of months) {
       const pairs: [HeadK[], HeadK[]][] = [
         [['IGST'], ['CGST', 'SGST']],
@@ -732,7 +744,7 @@ export function run(inp: Inputs): Result {
       const usedB = new Set<number>(),
         usedP = new Set<number>();
       // same month first (needs no explanation), then the nearest other month
-      for (const sameMonth of [true, false])
+      for (const sameMonth of RULE.timing ? [true, false] : [true])
         b.forEach((be, bi) => {
           if (usedB.has(bi) || !big(be.v)) return;
           let best = -1,
@@ -740,7 +752,7 @@ export function run(inp: Inputs): Result {
           p.forEach((pe, pi) => {
             if (usedP.has(pi) || Math.abs(pe.v - be.v) > TOL) return;
             const gap = Math.abs(months.indexOf(be.m) - months.indexOf(pe.m));
-            if (sameMonth ? gap !== 0 : gap === 0 || gap > 3) return;
+            if (sameMonth ? gap !== 0 : gap === 0 || gap > ENTRY_GAP) return;
             if (gap < bestGap) {
               best = pi;
               bestGap = gap;
@@ -772,12 +784,8 @@ export function run(inp: Inputs): Result {
     }
   }
   // 4b. month by month: exact amounts first (next month, then two months on), then what is left, partly
-  for (const [gap, exact] of [
-    [1, true],
-    [2, true],
-    [1, false],
-    [2, false],
-  ] as [number, boolean][])
+  const gaps = RULE.timing ? Array.from({ length: MONTH_GAP }, (_, i) => i + 1) : [];
+  for (const [gap, exact] of [...gaps.map(g => [g, true]), ...gaps.map(g => [g, false])] as [number, boolean][])
     for (const k of keysOf())
       for (const h of HEAD_KEYS)
         for (let i = 0; i + gap < months.length; i++) {
@@ -825,7 +833,7 @@ export function run(inp: Inputs): Result {
       months: [...new Set(list.map(e => e.month))].sort(),
     };
   };
-  for (const k of keysOf())
+  for (const k of RULE.after ? keysOf() : [])
     for (const h of HEAD_KEYS)
       for (const side of ['p', 'b'] as const) {
         const tot = r2(months.reduce((s, m) => s + res(k, h, m), 0));
@@ -861,7 +869,7 @@ export function run(inp: Inputs): Result {
         it.months.push(...o.months);
       }
   // 6. interest / late fee paid in cash but debited to the tax ledger in books
-  for (const h of HEAD_KEYS)
+  for (const h of RULE.fee ? HEAD_KEYS : [])
     for (const m of months) {
       const r = res('paid_cash', h, m);
       if (!(r > TOL)) continue;
