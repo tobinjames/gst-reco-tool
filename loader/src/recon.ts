@@ -1,6 +1,7 @@
 import { nameKey } from './suppliers';
 // Invoice-level reconciliation: purchase register vs GSTR-2B, sales register vs GSTR-1
 import { fyOfDate, r2 } from './util';
+import { isSuperseded } from './gstr2b';
 
 export const normNo = (s: any) =>
   String(s ?? '')
@@ -96,6 +97,8 @@ interface Doc {
   amt: number[];
   extra: Record<string, any>;
   used?: boolean;
+  /** 'N' for a credit note / purchase return: never paired with an invoice of the same number */
+  cls?: string;
 }
 export type Manual = Map<string, { b: Set<string>; r: Set<string> }>;
 const merge = (l: Doc[]): Doc => ({
@@ -165,7 +168,7 @@ function pair(books: Doc[], ret: Doc[], gstinMatters: boolean, o: MatchOptions =
     if (!idx.has(k)) idx.set(k, []);
     idx.get(k)!.push(d);
   };
-  ret.forEach(d => add(`${gstinMatters ? d.gstin : ''}|${normNo(d.no)}`, d));
+  ret.forEach(d => add(`${gstinMatters ? d.gstin : ''}|${normNo(d.no)}|${d.cls ?? ''}`, d));
   const take = (k: string, ok: (d: Doc) => boolean = () => true) => {
     const l = idx.get(k);
     const d = l?.find(x => !x.used && ok(x));
@@ -174,18 +177,55 @@ function pair(books: Doc[], ret: Doc[], gstinMatters: boolean, o: MatchOptions =
   };
   if (o.rules.exact)
     for (const b of books.filter(x => !x.used)) {
-      const r = take(`${gstinMatters ? b.gstin : ''}|${normNo(b.no)}`);
+      const r = take(`${gstinMatters ? b.gstin : ''}|${normNo(b.no)}|${b.cls ?? ''}`);
       if (r) {
         b.used = true;
         pairs.push({ b, r, basis: 'Invoice no.' });
       }
     }
-  const free = () => ret.filter(d => !d.used);
+  // indexes over the return documents, so each rule looks up its few candidates instead of scanning every document
+  // (candidates come back in the order of `ret`, so results are the same as a full scan)
+  const pos = new Map<Doc, number>();
+  ret.forEach((d, i) => pos.set(d, i));
+  const index = (key: (d: Doc) => string[]) => {
+    const m = new Map<string, Doc[]>();
+    for (const d of ret)
+      for (const k of new Set(key(d)))
+        if (k) {
+          if (!m.has(k)) m.set(k, []);
+          m.get(k)!.push(d);
+        }
+    return m;
+  };
+  const last4 = (s: any) => {
+    const x = normNo(s);
+    return x.length >= 4 ? x.slice(-4) : '';
+  };
+  const tailKey = (s: any) => {
+    const t = tailDigits(s);
+    return t.length >= 3 ? t : '';
+  };
+  const byGstin = index(d => [d.gstin || '-']),
+    byDigits = index(d => [digits(d.no)]),
+    byTail = index(d => [`L${last4(d.no)}`, `T${tailKey(d.no)}`].filter(k => k.length > 1)),
+    byNo = index(d => [normNo(d.no)]);
+  /** unused return documents under the given keys of an index, in `ret` order */
+  const from = (m: Map<string, Doc[]>, keys: string[]) => {
+    const seen = new Set<Doc>(),
+      out: Doc[] = [];
+    for (const k of keys) for (const d of m.get(k) ?? []) if (!d.used && !seen.has(d)) seen.add(d) && out.push(d);
+    return keys.length > 1 ? out.sort((a, b) => pos.get(a)! - pos.get(b)!) : out;
+  };
+  /** candidates for a books document: same GSTIN when it matters (small list), else by the rule's own key */
+  const free = (b: Doc, m: Map<string, Doc[]>, keys: string[]) =>
+    gstinMatters ? from(byGstin, [b.gstin || '-']) : from(m, keys);
   if (o.rules.digits)
     for (const b of books.filter(x => !x.used)) {
       const dg = digits(b.no);
       if (!dg) continue;
-      const r = free().find(d => (!gstinMatters || d.gstin === b.gstin) && digits(d.no) === dg && amtOk(d, b, true));
+      const r = free(b, byDigits, [dg]).find(
+        d => (!gstinMatters || d.gstin === b.gstin) && digits(d.no) === dg && amtOk(d, b, true),
+      );
       if (r) {
         r.used = b.used = true;
         pairs.push({ b, r, basis: 'Digits of invoice no.' });
@@ -193,7 +233,11 @@ function pair(books: Doc[], ret: Doc[], gstinMatters: boolean, o: MatchOptions =
     }
   if (o.rules.tail)
     for (const b of books.filter(x => !x.used)) {
-      const r = free().find(
+      const r = free(
+        b,
+        byTail,
+        [`L${last4(b.no)}`, `T${tailKey(b.no)}`].filter(k => k.length > 1),
+      ).find(
         d =>
           (!gstinMatters || d.gstin === b.gstin) &&
           suffixMatch(d.no, b.no) &&
@@ -210,7 +254,7 @@ function pair(books: Doc[], ret: Doc[], gstinMatters: boolean, o: MatchOptions =
       if (!b.gstin) continue;
       const bd = dayNo(b.date);
       const near0 = (d: Doc) => d.date === b.date || Math.abs(dayNo(d.date) - bd) <= o.days;
-      const cands = free().filter(
+      const cands = from(byGstin, [b.gstin]).filter(
         d => d.gstin === b.gstin && near0(d) && near(tax(d.amt), tax(b.amt), false) && near(d.amt[0], b.amt[0], false),
       );
       const r = cands.sort((x, y) => Math.abs(dayNo(x.date) - bd) - Math.abs(dayNo(y.date) - bd))[0];
@@ -225,7 +269,7 @@ function pair(books: Doc[], ret: Doc[], gstinMatters: boolean, o: MatchOptions =
     }
   if (gstinMatters && o.rules.otherGstin)
     for (const b of books.filter(x => !x.used)) {
-      const r = free().find(d => normNo(d.no) === normNo(b.no) && amtOk(d, b));
+      const r = from(byNo, [normNo(b.no)]).find(d => normNo(d.no) === normNo(b.no) && amtOk(d, b));
       if (r) {
         r.used = b.used = true;
         pairs.push({ b, r, basis: 'Invoice no. + amount (GSTIN differs)' });
@@ -237,6 +281,8 @@ function pair(books: Doc[], ret: Doc[], gstinMatters: boolean, o: MatchOptions =
 }
 
 // ---------------------------------------------------------------- purchases vs 2B
+/** Books_Purchase row of a debit note / purchase return (negative amounts) → 'N' */
+const noteCls = (r: any[]) => (nz(r[12]) + nz(r[13]) + nz(r[14]) + nz(r[15]) + nz(r[16]) < 0 ? 'N' : '');
 export function reconPurchases(
   bookRows: any[][],
   b2bRows: any[][],
@@ -259,13 +305,15 @@ export function reconPurchases(
     r =>
       `${String(r[3] ?? '')
         .trim()
-        .toUpperCase()}|${normNo(r[1])}|${String(r[4] ?? '')}`,
+        .toUpperCase()}|${normNo(r[1])}|${String(r[4] ?? '')}|${noteCls(r)}`,
   )) {
     const f = rows[0];
+    const cls = noteCls(f);
     const d: Doc = {
+      cls,
       id: `B|${String(f[3] ?? '')
         .trim()
-        .toUpperCase()}|${normNo(f[1])}`,
+        .toUpperCase()}|${normNo(f[1])}${cls ? '|CN' : ''}`,
       gstin: String(f[3] ?? '')
         .trim()
         .toUpperCase(),
@@ -287,10 +335,13 @@ export function reconPurchases(
     r =>
       r &&
       ['B2B', 'B2BA', 'CDNR', 'CDNRA', 'ECOM', 'ECOMA', 'IMPG', 'IMPGSEZ'].includes(String(r[9])) &&
+      !isSuperseded(r) &&
       (String(r[7]) === cy || (String(r[7]) === ny && String(r[15]) !== ny)),
   );
   const ret: Doc[] = [];
-  for (const [, rows] of group(pool, r => `${String(r[10] ?? '').toUpperCase()}|${normNo(r[13])}`)) {
+  // credit notes are kept apart from invoices of the same number
+  const retCls = (r: any[]) => (String(r[12]) === 'CN' ? 'N' : '');
+  for (const [, rows] of group(pool, r => `${String(r[10] ?? '').toUpperCase()}|${normNo(r[13])}|${retCls(r)}`)) {
     const amended = rows.filter(r => String(r[9]).endsWith('A'));
     const use = amended.length
       ? amended.filter(
@@ -304,7 +355,8 @@ export function reconPurchases(
       : rows;
     const f = use[0];
     ret.push({
-      id: `R|${String(f[10] ?? '').toUpperCase()}|${normNo(f[13])}`,
+      cls: retCls(f),
+      id: `R|${String(f[10] ?? '').toUpperCase()}|${normNo(f[13])}${retCls(f) ? '|CN' : ''}`,
       gstin: String(f[10] ?? '').toUpperCase(),
       name: String(f[11] ?? ''),
       no: String(f[13] ?? ''),
@@ -328,6 +380,7 @@ export function reconPurchases(
       if (!byName.has(k)) byName.set(k, new Set());
       byName.get(k)!.add(r.gstin);
     }
+  const retByNo = group(ret, r => normNo(r.no));
   let inferred = 0,
     noGstin = 0;
   for (const b of books) {
@@ -338,7 +391,7 @@ export function reconPurchases(
     let how = 'supplier name';
     // approximate names are not guessed here: the Loader suggests them and the user confirms (suppliers.ts)
     if (!g) {
-      const r = ret.find(r => normNo(r.no) === normNo(b.no) && Math.abs(tax(r.amt) - tax(b.amt)) <= TOL);
+      const r = (retByNo.get(normNo(b.no)) ?? []).find(r => Math.abs(tax(r.amt) - tax(b.amt)) <= TOL);
       if (r) {
         g = r.gstin;
         how = 'invoice no. + amount';
@@ -346,7 +399,7 @@ export function reconPurchases(
     }
     if (g) {
       b.gstin = g;
-      b.id = `B|${g}|${normNo(b.no)}`;
+      b.id = `B|${g}|${normNo(b.no)}${b.cls ? '|CN' : ''}`;
       b.extra.gstinFrom = how;
       inferred++;
     }
@@ -375,25 +428,38 @@ export function reconPurchases(
   // supplier total: leftover unmatched documents of a supplier that add up to the same taxable value and tax on both sides
   const leftB = pairs.filter(p => p.b && !p.r),
     leftR = pairs.filter(p => p.r && !p.b);
-  if (o.rules.supplierTotal)
+  if (o.rules.supplierTotal) {
+    const rByG = group(
+      leftR.filter(p => !keepApart.has(p.r!.id)),
+      p => p.r!.gstin,
+    );
+    const gone = new Set<any>(),
+      totals: any[] = [];
     for (const [g, bl] of group(
       leftB.filter(p => !keepApart.has(p.b!.id)),
       p => p.b!.gstin,
     )) {
-      const rl = leftR.filter(p => p.r!.gstin === g && !keepApart.has(p.r!.id));
+      const rl = rByG.get(g) ?? [];
       if (!g || !rl.length) continue;
       const B = merge(bl.map(p => p.b!)),
         R = merge(rl.map(p => p.r!));
       if (Math.abs(tax(B.amt) - tax(R.amt)) <= TOL && Math.abs(B.amt[0] - R.amt[0]) <= TOL) {
-        for (const p of [...bl, ...rl]) pairs.splice(pairs.indexOf(p), 1);
-        pairs.push({ b: B, r: R, basis: `Supplier total (${bl.length} books / ${rl.length} 2B docs)`, total: true } as any);
+        for (const p of [...bl, ...rl]) gone.add(p);
+        totals.push({ b: B, r: R, basis: `Supplier total (${bl.length} books / ${rl.length} 2B docs)`, total: true });
       }
     }
+    if (gone.size) {
+      const keep = pairs.filter(p => !gone.has(p));
+      pairs.length = 0;
+      pairs.push(...keep, ...totals);
+    }
+  }
   // hints for what is still unmatched: same supplier, invoice no. ends the same (amounts differ)
   const hint = new Map<string, string>();
   const stillR = pairs.filter(p => p.r && !p.b).map(p => p.r!);
+  const stillRByG = group(stillR, r => r.gstin);
   for (const p of pairs.filter(p => p.b && !p.r)) {
-    const c = stillR.filter(r => r.gstin === p.b!.gstin && suffixMatch(r.no, p.b!.no));
+    const c = (stillRByG.get(p.b!.gstin) ?? []).filter(r => suffixMatch(r.no, p.b!.no));
     if (c.length) {
       const txt = c.map(r => `${r.no} (tax ${tax(r.amt).toLocaleString('en-IN')})`).join(', ');
       hint.set(p.b!.id, `Possible match in 2B: ${txt} - give both rows the same Match code to confirm`);
@@ -407,8 +473,9 @@ export function reconPurchases(
   }
   // otherwise: point out unmatched documents of the same supplier on the other side
   const stillB = pairs.filter(p => p.b && !p.r).map(p => p.b!);
-  const sameSup = (list: Doc[], d: Doc, side: string) => {
-    const o = list.filter(x => x.gstin && x.gstin === d.gstin);
+  const stillBByG = group(stillB, b => b.gstin);
+  const sameSup = (list: Map<string, Doc[]>, d: Doc, side: string) => {
+    const o = d.gstin ? (list.get(d.gstin) ?? []) : [];
     return o.length
       ? `Same supplier has ${o.length} unmatched ${side} doc(s): ${o
           .slice(0, 3)
@@ -418,12 +485,12 @@ export function reconPurchases(
   };
   for (const b of stillB)
     if (!hint.has(b.id)) {
-      const t = sameSup(stillR, b, '2B');
+      const t = sameSup(stillRByG, b, '2B');
       if (t) hint.set(b.id, t);
     }
   for (const r of stillR)
     if (!hint.has(r.id)) {
-      const t = sameSup(stillB, r, 'books');
+      const t = sameSup(stillBByG, r, 'books');
       if (t) hint.set(r.id, t);
     }
   const availed = (s: string) => /^(Availed|Reclaimed|Reversed)/.test(s);

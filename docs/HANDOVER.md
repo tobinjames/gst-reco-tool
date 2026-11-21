@@ -1,6 +1,6 @@
 # GST Annual Return & ITC Reconciliation Tool — Handover
 
-James & James LLP · built 20 Nov 2026 · Loader v0.12 (matching settings per tab, 21 Nov 2026), workbook template 2026.11.20-7
+James & James LLP · built 20 Nov 2026 · Loader v0.13 (fixes from the independent review, 21 Nov 2026), workbook template 2026.11.20-7
 
 ## What it is
 Two pieces:
@@ -123,6 +123,25 @@ Top-level tabs (Input Reco, Annual return, GST ledger flow) replace the mode car
   resolveCustomers() returns the GSTIN and basis per name; step 4b lists mapped customers with the basis and the agreeing
   invoices, "not right? choose" stores '?' (no automatic mapping); the Customer_Map sheet carries the same. A number that agrees
   with a different amount is shown but never maps.
+
+## Fixes from the independent review (v0.13, 21 Nov 2026)
+Review: project files reviews/GST_Reco_Tool_Review_v0.12.md. Tested by test/review.test.ts.
+- **2B amendments** (GSTN GSTR-2B FAQ 8: amendment tables carry the full revised values, only the summary is the difference):
+  process2b() handles files in period order and links B2BA/ECOMA by `oinum`, CDNRA by `ontnum`, re-sent bills of entry
+  (`isamd` Y) by BOE no. The original (or an earlier amendment) gets key '' and column S "Superseded by ..."
+  (`isSuperseded()`), so 8A, Input Reco and ITC three ways count the latest version only. An amendment whose original is
+  not loaded is not counted (warning: load the original month's 2B).
+- **Purchase debit notes / returns / vendor credits** stay negative in Books_Purchase (new mapping field Document type;
+  a negative row is a return too). Purchase and 2B documents carry `cls` 'N' for notes, so a note is never paired with the
+  invoice of the same number (ids get `|CN`).
+- **A return loaded twice**: a GSTR-1 or 2B file of a period already loaded whose entries are at least half the same is left
+  out with an error message; parts of a large return (different documents) are still added up.
+- **CSV**: numbers with leading zeros stay text (invoice no. 000123). Register dates written as text are checked as a column:
+  month/day/year only when a second part is above 12 and no first part is (shown on the mapping preview).
+- **Speed**: pair() looks candidates up in indexes (by GSTIN, digits, last 4 characters / tail digits, number) instead of
+  scanning every 2B document; supplier totals and hints use groups. 50,000 documents a side: 19 s → under 1 s (Node).
+- **Progress bar** (src/progress.ts, `step()` / `withProgress()`): reading files (file i of n), working out the tabs
+  (once after the last file, not after each one), and every workbook build. step() waits for a paint, and does nothing in Node.
 
 ## Key decisions (agreed with Tobin)
 - No macros and no Excel 365 functions (SUMIFS/INDEX/MATCH only). The browser does the parsing, because Power Query "From PDF" isn't available to every user.

@@ -6,14 +6,56 @@ export function is2b(j: any) {
   return !!(d && d.rtnprd && (d.docdata || d.itcsumm));
 }
 
+/** column S note on a 2B row that a later amendment replaced (not counted anywhere) */
+export const SUPERSEDED = 'Superseded by';
+/** a RAW_2B row as an array (A key, B-F amounts, G..S info): true when a later amendment replaced it */
+export const isSuperseded = (r: any[]) => String(r?.[18] ?? '').startsWith(SUPERSEDED);
+const docNo = (s: any) =>
+  String(s ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+/** one key per document of a 2B: the amendment of a document carries the key of its original (oinum / ontnum) */
+const docSig = (d: any) => {
+  const out = new Set<string>();
+  const dd = d.docdata || {};
+  for (const s of [...(dd.b2b || []), ...(dd.ecom || [])]) for (const i of s.inv || []) out.add(`I|${s.ctin}|${docNo(i.inum)}`);
+  for (const s of dd.cdnr || []) for (const nt of s.nt || []) out.add(`N|${s.ctin}|${docNo(nt.ntnum ?? nt.nt_num)}`);
+  for (const b of dd.impg || []) out.add(`E|${docNo(b.boenum)}`);
+  return out;
+};
+
 export function process2b(files: { name: string; json: any }[], cy: string, py: string, ny: string, warns: Warn[]) {
   const rows: RawRow[] = [];
   const periods = new Set<string>();
+  /** documents already read per period: a second file of the same period with the same documents is a duplicate */
+  const seenDocs = new Map<string, Set<string>>();
+  // amendments are applied in period order (an earlier original first, then the amendment that replaces it)
+  const per = (f: { json: any }) => {
+    const p = String((f.json.data ?? f.json).rtnprd ?? '');
+    return p.slice(2) + p.slice(0, 2);
+  };
+  files = [...files].sort((a, b) => per(a).localeCompare(per(b)));
+  /** live document → its row; amended documents are looked up by their original number */
+  const live = new Map<string, RawRow>();
   for (const f of files) {
     const d = f.json.data ?? f.json;
     const prd = String(d.rtnprd),
       bfy = fyOfPeriod(prd);
-    if (periods.has(prd)) warns.push({ level: 'warn', file: f.name, msg: `2B for ${prd} loaded more than once` });
+    const sig = docSig(d);
+    if (periods.has(prd)) {
+      const prev = seenDocs.get(prd)!;
+      const same = [...sig].filter(k => prev.has(k)).length;
+      // large 2Bs come in several files with different documents; the same documents again = the same 2B loaded twice
+      if (sig.size && same / sig.size >= 0.5) {
+        warns.push({
+          level: 'error',
+          file: f.name,
+          msg: `2B for ${prd.slice(0, 2)}/${prd.slice(2)} is already loaded (${same} of ${sig.size} documents are the same): this file is left out`,
+        });
+        continue;
+      }
+      sig.forEach(k => prev.add(k));
+    } else seenDocs.set(prd, sig);
     periods.add(prd);
     if (bfy !== cy && bfy !== ny) {
       warns.push({ level: 'info', file: f.name, msg: `2B period ${prd} is outside ${cy} / ${ny}; rows kept but not counted` });
@@ -34,6 +76,7 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
       rcm: string,
       avl: string,
       isImport = false,
+      orig?: string,
     ) => {
       const dfy = fyOfDate(docDt);
       let key = '';
@@ -46,7 +89,7 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
         else if (dfy === cy && nyInWindow) key = '8A+8C';
         else if (dfy === py && bfy === cy) key = '6A1';
       }
-      rows.push({
+      const row: RawRow = {
         key,
         amt,
         info: [
@@ -64,7 +107,41 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
           rcm,
           doc?.imsStatus ? `IMS:${doc.imsStatus}` : '',
         ],
-      });
+      };
+      rows.push(row);
+      supersede(row, section, sup?.ctin ?? '', dtype, docNo, orig);
+    };
+    /** GSTN (GSTR-2B FAQ 8): amendment tables carry the full revised values of the document, the summary only the
+     * difference. So the original (or an earlier amendment) of an amended document is set aside and only the latest
+     * version counts. Without the original loaded the amendment's full value is not counted (the original is in a 2B
+     * that is not loaded and was counted there). */
+    const supersede = (row: RawRow, section: string, ctin: string, dtype: string, no: string, orig?: string) => {
+      const fam = section.replace(/A$/, '').replace(/^IMPGSEZ$/, 'IMPG');
+      const kind = fam === 'CDNR' ? 'N' : fam === 'IMPG' ? 'E' : 'I';
+      const k = (n: any) => `${fam}|${kind === 'E' ? '' : ctin}|${kind}|${docNo(n)}`;
+      const own = k(no);
+      const amended = section.endsWith('A') || (fam === 'IMPG' && orig !== undefined);
+      if (amended) {
+        const ok = k(orig || no);
+        const old = live.get(ok) ?? live.get(own);
+        const p = `${prd.slice(0, 2)}/${prd.slice(2)}`;
+        if (old && old !== row) {
+          old.key = '';
+          old.info[12] = `${SUPERSEDED} ${section} ${no} in ${p}${old.info[12] ? '; ' + old.info[12] : ''}`;
+          live.delete(ok);
+          live.delete(own);
+        } else if (section.endsWith('A')) {
+          if (row.key)
+            warns.push({
+              level: 'warn',
+              file: f.name,
+              msg: `${section} ${no}${orig && docNo(orig) !== docNo(no) ? ` (original ${orig})` : ''} of ${ctin || 'import'}: the original document is not in the 2B files loaded, so the amended value is not counted in ${row.key} (load the 2B of the original month)`,
+            });
+          row.key = '';
+          row.info[12] = `Original not loaded: not counted${row.info[12] ? '; ' + row.info[12] : ''}`;
+        }
+      }
+      live.set(own, row);
     };
     for (const [sec, arr] of [
       ['B2B', dd.b2b],
@@ -74,7 +151,8 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
       ['ECOMA', dd.ecoma],
     ] as const)
       for (const s of arr || [])
-        for (const inv of s.inv || []) emit(sec, s, inv, inv.inum, inv.dt, 'INV', amt2b(inv), inv.rev ?? 'N', inv.itcavl ?? 'Y');
+        for (const inv of s.inv || [])
+          emit(sec, s, inv, inv.inum, inv.dt, 'INV', amt2b(inv), inv.rev ?? 'N', inv.itcavl ?? 'Y', false, inv.oinum);
     for (const [sec, arr] of [
       ['CDNR', dd.cdnr],
       ['CDNRA', dd.cdnra],
@@ -93,6 +171,8 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
             cn ? neg(a) : a,
             nt.rev ?? 'N',
             nt.itcavl ?? 'Y',
+            false,
+            nt.ontnum ?? nt.ont_num,
           );
         }
     for (const [sec, arr] of [
@@ -140,8 +220,10 @@ export function process2b(files: { name: string; json: any }[], cy: string, py: 
           'BOE',
           a,
           'N',
-          doc.isamd === 'Y' ? 'Y' : 'Y',
+          'Y',
           true,
+          // a bill of entry amended at ICEGATE comes again with isamd = Y and replaces the earlier one
+          doc.isamd === 'Y' ? String(doc.boenum) : undefined,
         );
       }
     for (const sec of Object.keys(dd))

@@ -309,10 +309,27 @@ function keyFor(d: Doc, cy: string, ny: string): string {
 export function processGstr1(files: G1File[], cy: string, ny: string, warns: Warn[]) {
   const all: Doc[] = [];
   const hsnRows: any[] = [];
-  const seen = new Set<string>();
+  /** documents already read per GSTIN + period: large returns come in several files with different documents, but a
+   * file whose documents were already read (the same return downloaded twice) would double the turnover */
+  const seen = new Map<string, Set<string>>();
+  const sigOf = (d: Doc) => `${d.section}|${d.party}|${d.num}|${d.pos}|${d.rate}|${d.dtype}|${d.amt.join(',')}`;
   for (const f of files) {
-    const fp = `${f.json.gstin}|${f.json.fp}|${f.name.replace(/_\d+\.json$/i, '')}`;
+    const fp = `${f.json.gstin}|${f.json.fp}`;
     const { docs, hsn } = extract(f);
+    const sig = new Set(docs.map(sigOf));
+    const prev = seen.get(fp);
+    if (prev) {
+      const same = [...sig].filter(k => prev.has(k)).length;
+      if (sig.size && same / sig.size >= 0.5) {
+        warns.push({
+          level: 'error',
+          file: f.name,
+          msg: `GSTR-1 for ${String(f.json.fp).slice(0, 2)}/${String(f.json.fp).slice(2)} is already loaded (${same} of ${sig.size} entries are the same): this file is left out`,
+        });
+        continue;
+      }
+      sig.forEach(k => prev.add(k));
+    } else seen.set(fp, sig);
     all.push(...docs);
     if (Object.values(f.json.supecoa ?? {}).some((v: any) => Array.isArray(v) && v.length))
       warns.push({
@@ -328,7 +345,6 @@ export function processGstr1(files: G1File[], cy: string, ny: string, warns: War
           msg: `GSTR-1 section "${sec}" (Table 15: supplies on which an e-commerce operator pays tax u/s 9(5)) is not read yet; check Tables 4 / 5 by hand`,
         });
     if (fyOfPeriod(String(f.json.fp)) === cy) hsnRows.push(...hsn);
-    seen.add(fp);
   }
   // index originals for amendment differentials
   const orig = new Map<string, Doc>();

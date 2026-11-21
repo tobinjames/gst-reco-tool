@@ -1,5 +1,6 @@
 // GST ledger flow tab: portal ledgers, books GST accounts, balances, the three flow statements, reasons, cross-checks, workbook
 import type { InFile } from '../build';
+import { withProgress } from '../progress';
 import {
   AccHead,
   AccType,
@@ -892,7 +893,10 @@ export class FlowTab {
   }
 
   // ---------- 7. workbook
-  private async build() {
+  private build() {
+    return withProgress('Building the workbook…', () => this.buildInner());
+  }
+  private async buildInner() {
     const r = this.res,
       c = this.ctx();
     if (!r || !this.inp || !this.year) return;

@@ -6,6 +6,7 @@ import { BEntry, Inputs, Result, ymLabel } from './engine';
 import { contraOf } from './books';
 import { DEFAULT_MATCH, MatchOptions, reconPurchases, toDate } from '../recon';
 import { fyShift } from '../util';
+import { isSuperseded } from '../gstr2b';
 
 export type H4 = Record<Head, number>;
 export interface BridgeLine {
@@ -129,7 +130,8 @@ export function itcThreeWay(
     if (
       !['B2B', 'B2BA', 'CDNR', 'CDNRA', 'ECOM', 'ECOMA', 'IMPG', 'IMPGSEZ', 'ISD', 'ISDA'].includes(String(x[9])) ||
       String(x[16]) === 'N' ||
-      String(x[17]) === 'Y'
+      String(x[17]) === 'Y' ||
+      isSuperseded(x)
     )
       continue;
     const a: H4 = { CGST: +x[2] || 0, SGST: +x[3] || 0, IGST: +x[4] || 0, CESS: +x[5] || 0 };
