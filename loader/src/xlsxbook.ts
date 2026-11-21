@@ -105,7 +105,10 @@ function sheetXml(sh: SheetSpec) {
     ? `<pane${fr.col ? ` xSplit="${fr.col}"` : ''}${fr.row ? ` ySplit="${fr.row}"` : ''} topLeftCell="${col(fr.col || 0)}${(fr.row || 0) + 1}" activePane="${fr.row && fr.col ? 'bottomRight' : fr.row ? 'bottomLeft' : 'topRight'}" state="frozen"/>`
     : '';
   const rows = sh.rows
-    .map((r, i) => `<row r="${i + 1}"${sh.heights?.[i + 1] ? ` ht="${sh.heights[i + 1]}" customHeight="1"` : ''}>${(r || []).map((c, j) => cellXml(col(j) + (i + 1), c)).join('')}</row>`)
+    .map(
+      (r, i) =>
+        `<row r="${i + 1}"${sh.heights?.[i + 1] ? ` ht="${sh.heights[i + 1]}" customHeight="1"` : ''}>${(r || []).map((c, j) => cellXml(col(j) + (i + 1), c)).join('')}</row>`,
+    )
     .join('');
   const af =
     sh.filter && sh.rows.length > sh.filter.row

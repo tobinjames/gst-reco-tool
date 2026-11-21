@@ -87,7 +87,11 @@ export function indexSheet(meta: FrontMeta, sheets: SheetInfo[]): SheetSpec {
     ],
   ];
   const all: SheetInfo[] = [
-    { name: INSTRUCTIONS, role: 'Reference', about: 'How to use and read this workpaper, the settings used and the files it was built from.' },
+    {
+      name: INSTRUCTIONS,
+      role: 'Reference',
+      about: 'How to use and read this workpaper, the settings used and the files it was built from.',
+    },
     ...sheets,
   ];
   all.forEach((s, i) => rows.push([i + 1, sheetLink(s.name), s.role, { v: s.about, s: 'wrap' }]));
@@ -103,7 +107,10 @@ export function indexSheet(meta: FrontMeta, sheets: SheetInfo[]): SheetSpec {
     ['Summary', { v: 'Key figures. Each one is a link or a SUMIFS to a working sheet, so you can trace it back.', s: 'wrap' }],
     ['Working', { v: 'The reconciliation itself. Totals are SUM / SUMIFS over the source-data sheets.', s: 'wrap' }],
     ['Source data', { v: 'The rows read from the files, as they are, with how the tool classified each one.', s: 'wrap' }],
-    [{ v: 'Yellow cells', s: 'input' }, { v: 'Yours to fill in. Everything else is worked out.', s: 'wrap' }],
+    [
+      { v: 'Yellow cells', s: 'input' },
+      { v: 'Yours to fill in. Everything else is worked out.', s: 'wrap' },
+    ],
     [
       { v: 'Formulas', s: 'bold' },
       {
@@ -119,9 +126,24 @@ export function indexSheet(meta: FrontMeta, sheets: SheetInfo[]): SheetSpec {
       { v: '', s: 'sec' },
       { v: '', s: 'sec' },
     ],
-    [{ v: '', s: 'hdr' }, { v: 'Name', s: 'hdr' }, { v: 'Date', s: 'hdr' }, { v: 'Remarks', s: 'hdr' }],
-    [{ v: 'Prepared by', s: 'bold' }, { v: '', s: 'input' }, { v: '', s: 'input' }, { v: '', s: 'input' }],
-    [{ v: 'Reviewed by', s: 'bold' }, { v: '', s: 'input' }, { v: '', s: 'input' }, { v: '', s: 'input' }],
+    [
+      { v: '', s: 'hdr' },
+      { v: 'Name', s: 'hdr' },
+      { v: 'Date', s: 'hdr' },
+      { v: 'Remarks', s: 'hdr' },
+    ],
+    [
+      { v: 'Prepared by', s: 'bold' },
+      { v: '', s: 'input' },
+      { v: '', s: 'input' },
+      { v: '', s: 'input' },
+    ],
+    [
+      { v: 'Reviewed by', s: 'bold' },
+      { v: '', s: 'input' },
+      { v: '', s: 'input' },
+      { v: '', s: 'input' },
+    ],
   );
   return { name: INDEX, rows, widths: [16, 30, 13, 100, 4], tab: '2C388E', heights: { 1: 26, 2: 20 } };
 }

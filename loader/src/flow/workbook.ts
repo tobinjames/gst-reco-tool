@@ -550,7 +550,8 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
     ...title('Closing statement: books to the GST portal'),
     hdr(['', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'What to do']),
   ];
-  const closeAt: { block: Block; books: number; journals: number; adjusted: number; portal: number; unexplained: number[] }[] = [];
+  const closeAt: { block: Block; books: number; journals: number; adjusted: number; portal: number; unexplained: number[] }[] =
+    [];
   for (const c of y.closing) {
     const L = layout.find(x => x.block === c.block)!;
     cl.push([{ v: BLOCK_NAME[c.block], s: 'sec' }, ...blank(7)]);
@@ -705,7 +706,15 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   // ---- Summary: the closing position of each ledger and what is left, all links to Closing / Flow sheets
   const sm: C[][] = [
     ...title('Summary: GST ledgers as per books and as per the portal'),
-    hdr(['Closing balance (all heads)', 'As per books', 'Suggested journals', 'Books after journals', 'As per portal', 'Not explained', 'How it is worked out']),
+    hdr([
+      'Closing balance (all heads)',
+      'As per books',
+      'Suggested journals',
+      'Books after journals',
+      'As per portal',
+      'Not explained',
+      'How it is worked out',
+    ]),
   ];
   for (const c of closeAt) {
     const row = sm.length + 1,
@@ -819,43 +828,102 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
     {
       heading: 'How the figures are worked out',
       lines: [
-        ['Books_Lines / Portal_Lines', 'Every line read from the files, with its flow row (column R), its effect on the balance (column P) and its Year_Compare movement. Nothing else feeds the statements.'],
-        ['Flow_Books / Flow_Portal', 'Each cell = SUMIFS of "Row amount" (column T) of the line sheet for that flow row code (column H of the flow sheet), tax head and "in period". Opening = SUMIFS over Balances.'],
+        [
+          'Books_Lines / Portal_Lines',
+          'Every line read from the files, with its flow row (column R), its effect on the balance (column P) and its Year_Compare movement. Nothing else feeds the statements.',
+        ],
+        [
+          'Flow_Books / Flow_Portal',
+          'Each cell = SUMIFS of "Row amount" (column T) of the line sheet for that flow row code (column H of the flow sheet), tax head and "in period". Opening = SUMIFS over Balances.',
+        ],
         ['Flow_Difference', 'Flow_Books minus Flow_Portal, cell by cell.'],
-        ['Year_Compare', 'One SUMIFS a cell over the "Year_Compare movement" column of the line sheets; month columns add the month as a condition.'],
-        ['Closing', 'Closing as per books (link to Flow_Books) + suggested journals (SUMIFS over Journals) − each remaining difference = closing as per portal (link to Flow_Portal). The Check row must be nil.'],
-        ['Cross_Checks', 'A − B for each pair (cash ledger vs liability paid in cash, credit ledger vs liability paid by ITC, ledgers vs GSTR-3B); "Check" when the difference is above ₹1.'],
-        ['Basis', 'Books by voucher date; portal entries by return period (the April filing of the March return counts in March). A books line moved to another return period in the Loader is compared in that period, and the change is in Audit.'],
+        [
+          'Year_Compare',
+          'One SUMIFS a cell over the "Year_Compare movement" column of the line sheets; month columns add the month as a condition.',
+        ],
+        [
+          'Closing',
+          'Closing as per books (link to Flow_Books) + suggested journals (SUMIFS over Journals) − each remaining difference = closing as per portal (link to Flow_Portal). The Check row must be nil.',
+        ],
+        [
+          'Cross_Checks',
+          'A − B for each pair (cash ledger vs liability paid in cash, credit ledger vs liability paid by ITC, ledgers vs GSTR-3B); "Check" when the difference is above ₹1.',
+        ],
+        [
+          'Basis',
+          'Books by voucher date; portal entries by return period (the April filing of the March return counts in March). A books line moved to another return period in the Loader is compared in that period, and the change is in Audit.',
+        ],
       ],
     },
     {
       heading: 'Working with the tool',
       lines: [
-        ['Change a classification', 'In the Loader (GST ledger flow tab), open a month in the year comparison, Show lines, Change, with a remark. Changes go to Audit.'],
-        ['Next time', 'Drop this saved workpaper into the Loader: it brings back its source files, the account types, balances and your changes. Drop a newer GL dump with it to replace the saved copy; portal ledgers stay as filed.'],
-        ['Annual return', 'This workpaper, with the Input Reco and Revenue reco workpapers, is what the Annual return tab builds GSTR-9 / 9C from.'],
+        [
+          'Change a classification',
+          'In the Loader (GST ledger flow tab), open a month in the year comparison, Show lines, Change, with a remark. Changes go to Audit.',
+        ],
+        [
+          'Next time',
+          'Drop this saved workpaper into the Loader: it brings back its source files, the account types, balances and your changes. Drop a newer GL dump with it to replace the saved copy; portal ledgers stay as filed.',
+        ],
+        [
+          'Annual return',
+          'This workpaper, with the Input Reco and Revenue reco workpapers, is what the Annual return tab builds GSTR-9 / 9C from.',
+        ],
       ],
     },
     { heading: 'Settings used', lines: (meta.settings ?? []).map(t => ['Matching settings', t] as [string, string]) },
-    { heading: 'Files used', lines: meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as [string, string]) },
+    {
+      heading: 'Files used',
+      lines: meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as [string, string]),
+    },
     { heading: 'How to export each report', lines: guideLines },
   ];
   const info: SheetInfo[] = [
-    { name: 'Summary', role: 'Summary', about: 'Closing balances as per books and portal, what is not explained, the status of the checks, and each movement for the year.' },
-    { name: 'Setup_Checks', role: 'Working', about: 'Fix these first: a missing ledger, opening or flow row shows up as a difference everywhere else.' },
-    { name: 'Year_Compare', role: 'Working', about: 'Each movement for the year as per books and as per portal, the year-end cut-off and the month-wise difference.' },
-    { name: 'ITC_3way', role: 'Working', about: 'ITC as per books, GSTR-2B and GSTR-3B: books to 2B invoice by invoice, 2B to 3B month by month.' },
+    {
+      name: 'Summary',
+      role: 'Summary',
+      about:
+        'Closing balances as per books and portal, what is not explained, the status of the checks, and each movement for the year.',
+    },
+    {
+      name: 'Setup_Checks',
+      role: 'Working',
+      about: 'Fix these first: a missing ledger, opening or flow row shows up as a difference everywhere else.',
+    },
+    {
+      name: 'Year_Compare',
+      role: 'Working',
+      about: 'Each movement for the year as per books and as per portal, the year-end cut-off and the month-wise difference.',
+    },
+    {
+      name: 'ITC_3way',
+      role: 'Working',
+      about: 'ITC as per books, GSTR-2B and GSTR-3B: books to 2B invoice by invoice, 2B to 3B month by month.',
+    },
     { name: 'ITC_Invoices', role: 'Working', about: 'The purchase invoices that differ between the books and GSTR-2B.' },
     { name: 'Journals', role: 'Working', about: 'Suggested entries that bring the books in line with the portal (not posted).' },
-    { name: 'Closing', role: 'Working', about: 'Closing as per books + journals − each remaining difference = closing as per portal. Check must be nil.' },
-    { name: 'Flow_Books', role: 'Working', about: 'Opening, movements and closing from the books only (SUMIFS over Books_Lines).' },
+    {
+      name: 'Closing',
+      role: 'Working',
+      about: 'Closing as per books + journals − each remaining difference = closing as per portal. Check must be nil.',
+    },
+    {
+      name: 'Flow_Books',
+      role: 'Working',
+      about: 'Opening, movements and closing from the books only (SUMIFS over Books_Lines).',
+    },
     { name: 'Flow_Portal', role: 'Working', about: 'The same rows from the portal ledgers only (SUMIFS over Portal_Lines).' },
     { name: 'Flow_Difference', role: 'Working', about: 'Flow_Books minus Flow_Portal, row by row.' },
     { name: 'Cross_Checks', role: 'Working', about: 'The portal ledgers against each other and against GSTR-3B.' },
     { name: 'Month_wise', role: 'Working', about: 'Books, portal and difference for each flow row, head and month.' },
     { name: 'Books_Lines', role: 'Source data', about: 'Every books GST ledger line with its classification.' },
     { name: 'Portal_Lines', role: 'Source data', about: 'Every portal ledger line with its classification.' },
-    { name: 'Balances', role: 'Source data', about: 'Opening balances: entered, printed in the files, or carried from entries before the period.' },
+    {
+      name: 'Balances',
+      role: 'Source data',
+      about: 'Opening balances: entered, printed in the files, or carried from entries before the period.',
+    },
     { name: 'Audit', role: 'Your input', about: 'Every change made in the Loader, with its remark.' },
   ];
   const sheets: SheetSpec[] = [

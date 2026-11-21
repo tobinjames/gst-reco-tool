@@ -14,7 +14,15 @@ import { isPortal9, processPortal9 } from './portal9';
 import { RawRow, Warn, fyOfDate, fyOfPeriod, fyShift, r2 } from './util';
 import { Reader, Workbook, colLetter as colLetterOf } from './xlsx';
 import { RAW_SHEETS, fingerprint, seal, sealLines, readRows } from './integrity';
-import { HELPER_HEADERS, fixReconLayout, monthRows, salesMonthRows, summaryCells, supplierRows, withHelpers } from './reconsheets';
+import {
+  HELPER_HEADERS,
+  fixReconLayout,
+  monthRows,
+  salesMonthRows,
+  summaryCells,
+  supplierRows,
+  withHelpers,
+} from './reconsheets';
 import { DEFAULT_MATCH, KeepApart, Manual, MatchOptions, describeMatch, reconPurchases, reconSales } from './recon';
 
 /** what the user decided in the Loader's Review step: manual matches (Match codes) and documents kept apart (code X) */
@@ -28,6 +36,7 @@ export interface ReconExtra {
 }
 export { LOADER_VERSION } from './version';
 import { LOADER_VERSION } from './version';
+import { WORKPAPERS_SHEET, workpaperCells } from './annualwp';
 
 export type Kind =
   | 'GSTR-1'
@@ -434,7 +443,7 @@ export async function buildWorkbook(
   await fixReconLayout(wb, baseRd);
   const rawOf = async (sh: string) => written[sh] ?? (baseRd && baseRd.has(sh) ? await readRows(baseRd, sh, 6) : []);
   const booksOf = async (sh: string, given?: any[][]) => given ?? (baseRd && baseRd.has(sh) ? await readRows(baseRd, sh, 6) : []);
-  const { remarks, manual, keepApart } = await readReconState(baseRd);
+  const { remarks, manual, keepApart } = await reconStateFor(baseRd, files, 'annual');
   const mo = extra.match ?? DEFAULT_MATCH;
   const recon: any = {};
   const bp = (await booksOf('Books_Purchase', extra.purchases)).filter(
@@ -463,7 +472,10 @@ export async function buildWorkbook(
       );
       notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Purchases', msg: m }));
       await wb.writeRows('Recon_Purchases', 16, withHelpers(pr.rows), true);
-    await wb.setCells('Recon_Purchases', Object.fromEntries(HELPER_HEADERS.map((h, i) => [`A${String.fromCharCode(68 + i)}15`, h])));
+      await wb.setCells(
+        'Recon_Purchases',
+        Object.fromEntries(HELPER_HEADERS.map((h, i) => [`A${String.fromCharCode(68 + i)}15`, h])),
+      );
       await wb.writeRows('Recon_Suppliers', 6, supplierRows(pr.supRows, mo.tol), true);
       await wb.setCells('Recon_Purchases', { G3: `Tax = CGST + SGST + IGST + cess. ${describeMatch(mo)}` });
       recon.purchases = pr.stats;
@@ -499,6 +511,13 @@ export async function buildWorkbook(
         file: '',
         msg: `Sales reconciliation skipped: ${bs.length ? 'no GSTR-1 data' : 'no sales register'} yet`,
       });
+  }
+
+  // figures of the Input Reco, Revenue reco and GST ledger flow workpapers dropped with the files
+  if (wb.has(WORKPAPERS_SHEET)) {
+    const wp = await workpaperCells(files, warns);
+    if (wp.loaded.length) await wb.setCells(WORKPAPERS_SHEET, wp.cells);
+    recon.workpapers = wp.loaded;
   }
 
   // fingerprints of the imported data, checked again when the JSON is generated
@@ -541,6 +560,22 @@ export async function buildWorkbook(
   };
   await step('Writing the Excel file…', 0.85);
   return { bytes: await wb.save(), warns, summary, counts, recon };
+}
+
+/** annual return: match codes and remarks of the workbook being refreshed, else of the Input Reco workpaper (its purchase
+ *  reconciliation is the same register against the same 2B, so the codes carry over) */
+async function reconStateFor(baseRd: Reader | null, files: InFile[], mode: 'itc' | 'annual') {
+  const st = await readReconState(baseRd);
+  if (mode !== 'annual') return st;
+  const itc = files.find(f => f.kind === 'Workbook' && f.note === 'ITC reconciliation workbook' && f.bytes);
+  if (!itc) return st;
+  const o = await readReconState(await Reader.open(itc.bytes!));
+  for (const [k, v] of o.remarks) if (!st.remarks.has(k)) st.remarks.set(k, v);
+  if (!st.manual.Recon_Purchases.size && !st.keepApart.Recon_Purchases.size) {
+    st.manual.Recon_Purchases = o.manual.Recon_Purchases;
+    st.keepApart.Recon_Purchases = o.keepApart.Recon_Purchases;
+  }
+  return st;
 }
 
 /** remarks and manual Match codes from an earlier workbook (annual or ITC) */
@@ -655,7 +690,10 @@ export async function buildItc(
     await wb.setCells('Recon_Purchases', { G3: `Tax = CGST + SGST + IGST + cess. ${describeMatch(mo)}` });
     notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Purchases', msg: m }));
     await wb.writeRows('Recon_Purchases', 16, withHelpers(pr.rows), true);
-    await wb.setCells('Recon_Purchases', Object.fromEntries(HELPER_HEADERS.map((h, i) => [`A${String.fromCharCode(68 + i)}15`, h])));
+    await wb.setCells(
+      'Recon_Purchases',
+      Object.fromEntries(HELPER_HEADERS.map((h, i) => [`A${String.fromCharCode(68 + i)}15`, h])),
+    );
     await wb.writeRows('Recon_Suppliers', 6, supplierRows(pr.supRows, mo.tol), true);
     recon = pr.stats;
     // ITC position by head (CGST, SGST, IGST, Cess)
@@ -759,7 +797,7 @@ export async function reconPreview(
     rows.filter(r => r && cols.some(i => typeof r[i] === 'number' && r[i] !== 0));
   const bp = nonzero(extra.purchases ?? (await fromBase('Books_Purchase')), [12, 13, 14, 15, 16]);
   const bs = mode === 'annual' ? nonzero(extra.sales ?? (await fromBase('Books_Sales')), [11, 12, 13, 14, 15]) : [];
-  const { remarks, manual, keepApart } = await readReconState(baseRd);
+  const { remarks, manual, keepApart } = await reconStateFor(baseRd, files, mode);
   const mo = extra.match ?? DEFAULT_MATCH;
   const notes: string[] = [];
   const out: {

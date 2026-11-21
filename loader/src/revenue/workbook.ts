@@ -555,7 +555,9 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
       'Turnover as per books',
       { f: `Books_to_GSTR1!B${rowTurn}`, v: N(r.books.turnover[0]) },
       { f: `Books_to_GSTR1!C${rowTurn}`, v: N(r.books.turnover[1]) },
-      how(`Books_to_GSTR1 row ${rowTurn}: books taxable value and tax of every Rev_Items entry, less entries marked "not a supply".`),
+      how(
+        `Books_to_GSTR1 row ${rowTurn}: books taxable value and tax of every Rev_Items entry, less entries marked "not a supply".`,
+      ),
     ],
     [
       'Turnover as per GSTR-1',
@@ -674,17 +676,35 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
     {
       heading: 'What this workpaper does',
       lines: [
-        ['Purpose', 'Reconciles turnover as per books with GSTR-1, and GSTR-1 with GSTR-3B, for the year, giving the reason for every difference.'],
-        ['Start here', 'Summary, then Books_to_GSTR1 and GSTR1_to_3B (bank-reco style statements: start figure, reasons, end figure).'],
+        [
+          'Purpose',
+          'Reconciles turnover as per books with GSTR-1, and GSTR-1 with GSTR-3B, for the year, giving the reason for every difference.',
+        ],
+        [
+          'Start here',
+          'Summary, then Books_to_GSTR1 and GSTR1_to_3B (bank-reco style statements: start figure, reasons, end figure).',
+        ],
       ],
     },
     {
       heading: 'How the figures are worked out',
       lines: [
-        ['Rev_Items', 'One row per invoice, credit note, B2CS month / rate / place and Table 8 row, with the books side and the GSTR-1 side. "Reason used" = your reason if you gave one, else the tool\'s reason.'],
-        ['Books_to_GSTR1', 'Each reason line = SUMIFS of the GSTR-1 columns minus SUMIFS of the books columns of Rev_Items with that "Reason used". So books + reasons = GSTR-1; "Difference not explained" is what is left and should be nil.'],
-        ['GSTR1_to_3B', 'Links to the totals row of Month_3B, which compares GSTR-1 and 3B month by month and table by table (SUMIFS over G1_Rows and 3B_Rows).'],
-        ['Month_wise / Month_3B', 'The same by month. Books are by invoice date, GSTR-1 / 3B by return period: shifts between months of the same year cancel out over the year and show only here.'],
+        [
+          'Rev_Items',
+          'One row per invoice, credit note, B2CS month / rate / place and Table 8 row, with the books side and the GSTR-1 side. "Reason used" = your reason if you gave one, else the tool\'s reason.',
+        ],
+        [
+          'Books_to_GSTR1',
+          'Each reason line = SUMIFS of the GSTR-1 columns minus SUMIFS of the books columns of Rev_Items with that "Reason used". So books + reasons = GSTR-1; "Difference not explained" is what is left and should be nil.',
+        ],
+        [
+          'GSTR1_to_3B',
+          'Links to the totals row of Month_3B, which compares GSTR-1 and 3B month by month and table by table (SUMIFS over G1_Rows and 3B_Rows).',
+        ],
+        [
+          'Month_wise / Month_3B',
+          'The same by month. Books are by invoice date, GSTR-1 / 3B by return period: shifts between months of the same year cancel out over the year and show only here.',
+        ],
         ['B2C_Month', 'Books B2C entries ticked for each month against GSTR-1 B2CS.'],
         ['G1_Rows / 3B_Rows / Books_Lines', 'The data read from the files, untouched.'],
       ],
@@ -696,13 +716,25 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
     {
       heading: 'Working with the tool',
       lines: [
-        ['Your reasons in Excel', 'Fill the yellow columns of Rev_Items (Your reason, B2CS month, Remark) and save. The statements move with them.'],
-        ['Next time', 'Drop this saved workpaper into the Loader (Revenue reco tab): it brings back its files, settings and reasons; your yellow columns are read back by Id. A newer sales register or GL dump dropped with it replaces the saved copy; GSTR-1 and 3B stay as filed.'],
-        ['Annual return', 'This workpaper, with the Input Reco and GST ledger flow workpapers, is what the Annual return tab builds GSTR-9 / 9C from.'],
+        [
+          'Your reasons in Excel',
+          'Fill the yellow columns of Rev_Items (Your reason, B2CS month, Remark) and save. The statements move with them.',
+        ],
+        [
+          'Next time',
+          'Drop this saved workpaper into the Loader (Revenue reco tab): it brings back its files, settings and reasons; your yellow columns are read back by Id. A newer sales register or GL dump dropped with it replaces the saved copy; GSTR-1 and 3B stay as filed.',
+        ],
+        [
+          'Annual return',
+          'This workpaper, with the Input Reco and GST ledger flow workpapers, is what the Annual return tab builds GSTR-9 / 9C from.',
+        ],
       ],
     },
     { heading: 'Settings used', lines: (meta.settings ?? []).map(t => ['Matching settings', t] as [string, string]) },
-    { heading: 'Files used', lines: meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as [string, string]) },
+    {
+      heading: 'Files used',
+      lines: meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as [string, string]),
+    },
     {
       heading: 'Where to get the files',
       lines: REV_GUIDE.map(
@@ -715,15 +747,33 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
     },
   ];
   const info: SheetInfo[] = [
-    { name: 'Summary', role: 'Summary', about: 'Turnover as per books, GSTR-1 and GSTR-3B, the differences and the main reasons (links to the statements).' },
-    { name: 'Books_to_GSTR1', role: 'Working', about: 'Revenue as per books, each reason for the difference, turnover as per GSTR-1 (SUMIFS over Rev_Items).' },
+    {
+      name: 'Summary',
+      role: 'Summary',
+      about: 'Turnover as per books, GSTR-1 and GSTR-3B, the differences and the main reasons (links to the statements).',
+    },
+    {
+      name: 'Books_to_GSTR1',
+      role: 'Working',
+      about: 'Revenue as per books, each reason for the difference, turnover as per GSTR-1 (SUMIFS over Rev_Items).',
+    },
     { name: 'GSTR1_to_3B', role: 'Working', about: 'Turnover as per GSTR-1 to GSTR-3B Table 3.1, table by table for the year.' },
     { name: 'Month_wise', role: 'Working', about: 'Books, GSTR-1 and GSTR-3B by month.' },
     { name: 'B2C_Month', role: 'Working', about: 'Books B2C entries for each month against GSTR-1 B2CS.' },
     { name: 'Month_3B', role: 'Working', about: 'GSTR-1 against GSTR-3B by table and month.' },
-    { name: ITEMS_SHEET, role: 'Your input', about: 'Every document, B2CS and Table 8 row with both sides; yellow columns are yours (reason, B2CS month, remark).' },
+    {
+      name: ITEMS_SHEET,
+      role: 'Your input',
+      about: 'Every document, B2CS and Table 8 row with both sides; yellow columns are yours (reason, B2CS month, remark).',
+    },
     ...(meta.customers?.length
-      ? [{ name: 'Customer_Map', role: 'Working', about: 'Books customers without a GSTIN, the GSTIN given and the basis.' } as SheetInfo]
+      ? [
+          {
+            name: 'Customer_Map',
+            role: 'Working',
+            about: 'Books customers without a GSTIN, the GSTIN given and the basis.',
+          } as SheetInfo,
+        ]
       : []),
     { name: 'G1_Rows', role: 'Source data', about: 'GSTR-1 rows of the year, from the JSON files.' },
     { name: '3B_Rows', role: 'Source data', about: 'GSTR-3B Table 3.1 rows, from the PDFs.' },

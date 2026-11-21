@@ -1123,16 +1123,16 @@ wrow('itc_2bonly', 'In 2B, not in books', '=SUMIFS(Recon_Purchases!$AE$16:$AE$20
 r += 1
 wsec('rev', 'Revenue reco workpaper (books vs GSTR-1 vs GSTR-3B)')
 wrow('rev_books', 'Turnover as per books (taxable value)', None, '', 'Starting point for GSTR-9C Table 5A (turnover as per audited accounts), after the audit adjustments.')
-wrow('rev_g1', 'Turnover as per GSTR-1 (taxable value)', '=' + g9('TT', 0), 'Total turnover (5N + 10 - 11), To be Filed', 'A difference is usually Table 10 / 11 items or a basis chosen as Books in Tables 4-5.')
+wrow('rev_g1', 'Turnover as per GSTR-1 (taxable value)', '=' + g9('5N', 0), '4-5 Outward: 5N, To be Filed', 'A difference is usually a basis chosen as Books in Tables 4-5, or GSTR-1 amendments read differently. Table 10 / 11 items (next FY) are not in 5N.')
 wrow('rev_g1tax', 'Tax as per GSTR-1', tax('4N'), '4-5 Outward: 4N, To be Filed (tax)', '')
 wrow('rev_3b', 'Turnover as per GSTR-3B (taxable value)', None, '', 'GSTR-3B vs GSTR-1 differences go to Table 9 / 14 and DRC-03.')
 wrow('rev_unx1', 'Books to GSTR-1: difference not explained (taxable value)', None, '', 'Should be nil: explain it in the Revenue reco workpaper first.')
 wrow('rev_unx2', 'GSTR-1 to GSTR-3B: difference not explained (taxable value)', None, '', 'Should be nil.')
 r += 1
 wsec('flow', 'GST ledger flow workpaper (books GST ledgers vs portal ledgers)')
-wrow('flow_itc_books', 'Electronic credit ledger: closing as per books', None, '', '')
-wrow('flow_itc_portal', 'Electronic credit ledger: closing as per portal', None, '', '')
-wrow('flow_itc_unx', 'Electronic credit ledger: not explained', None, '', 'Should be nil.')
+wrow('flow_itc_books', 'Input tax credit (credit ledger): closing as per books', None, '', '')
+wrow('flow_itc_portal', 'Input tax credit (credit ledger): closing as per portal', None, '', '')
+wrow('flow_itc_unx', 'Input tax credit (credit ledger): not explained', None, '', 'Should be nil.')
 wrow('flow_liab_unx', 'Tax liability: not explained', None, '', 'Should be nil.')
 wrow('flow_cash_unx', 'Electronic cash ledger: not explained', None, '', 'Should be nil.')
 wrow('flow_fix', 'Set-up issues to fix first', None, '', 'Fix them in the GST ledger flow workpaper.')
@@ -1260,7 +1260,7 @@ wb.properties.subject = 'GSTR-9 and GSTR-9C working papers'
 wb.properties.keywords = 'GSTR-9, GSTR-9C, James & James LLP'
 wb.properties.company = FIRM if hasattr(wb.properties, 'company') else None
 # ---------------- integrity sheet (written by the Loader; used to detect edits before JSON generation)
-TEMPLATE_VERSION = '2026.11.21-8'
+TEMPLATE_VERSION = '2026.11.21-9'
 ig = wb.create_sheet('_Integrity')
 ig['A1'] = 'Item'; ig['B1'] = 'Value'; ig['C1'] = 'Rows'
 ig['A2'] = 'template_version'; ig['B2'] = TEMPLATE_VERSION
