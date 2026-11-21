@@ -49,7 +49,7 @@ From `loader/`: `npm ci` once, then
 - `npm test` tests only; `npm run test:update` after an intended change to a real-file case's results (then read the expected.json diff).
 - `npm run format` tidies the code (Prettier); `npm run build` produces `dist/index.html`.
 - Workbook template change: `python3 workbook/build_workbook.py` (or build_itc_template.py) from anywhere; it writes straight into loader/template and loader/src.
-- Release: the built HTML is not committed. Push a tag (e.g. `v0.10`) and .github/workflows/release.yml publishes a GitHub Release with GST_Reco_Loader_<tag>.html. Copies for Tobin also go to the project files (releases/).
+- Release: the built HTML is not committed. Run the Release workflow from the Actions tab with a version (e.g. `v0.10`), or push that tag; .github/workflows/release.yml publishes a GitHub Release with GST_Reco_Loader_<tag>.html. Copies for Tobin also go to the project files (releases/).
 
 ## UI (v0.8)
 The loader page was restyled (rounded cards, step badges, sticky top bar, mode cards with icons) keeping #2C388E and Onest. The top bar carries the firm logo (loader/src/brand/logo-blue.svg, inlined into index.html; black and white versions alongside); the favicon is the logo's ampersand mark. Step 2 has a "Where do I get these files?" guide (tabs: GST portal, Tally Prime, Zoho Books, other software) in loader/index.html; menu paths are as of Nov 2026, so recheck them when the portal or software changes.

@@ -1,10 +1,17 @@
-# Publishes the Loader as a GitHub Release when a version tag is pushed (e.g. v0.10).
-# The release carries the built HTML as GST_Reco_Loader_<tag>.html, so the built file does not live in the repo.
+# Publishes the Loader as a GitHub Release, with the built HTML as GST_Reco_Loader_<tag>.html
+# (so the built file does not live in the repo). Two ways to start it:
+# - push a version tag (e.g. v0.10), or
+# - Actions tab -> Release -> Run workflow, and type the version: the tag is created on the chosen branch's latest commit.
 name: Release
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version to publish, e.g. v0.10'
+        required: true
 
 permissions:
   contents: write
@@ -29,7 +36,11 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           cp dist/index.html "GST_Reco_Loader_${TAG}.html"
-          gh release create "$TAG" "GST_Reco_Loader_${TAG}.html" --title "Loader ${TAG}" --generate-notes
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "GST_Reco_Loader_${TAG}.html" --clobber
+          else
+            gh release create "$TAG" "GST_Reco_Loader_${TAG}.html" --target "$GITHUB_SHA" --title "Loader ${TAG}" --generate-notes
+          fi
