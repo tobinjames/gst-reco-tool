@@ -6,6 +6,7 @@ import { ThreeB } from './gstr3b';
 import { readTable } from './register';
 import { parsePortal, portalKindOf } from './flow/portal';
 import { looksLikeBooks, parseBooks } from './flow/books';
+import { parseCustomerList } from './revenue/customers';
 import { BookFile, PORTAL_LABEL, PortalLedger } from './flow/types';
 import { isPortal9, processPortal9 } from './portal9';
 import { RawRow, Warn, fyOfDate, fyOfPeriod, fyShift, r2 } from './util';
@@ -35,6 +36,7 @@ export type Kind =
   | 'Portal ledger'
   | 'Books ledger'
   | 'Revenue workbook'
+  | 'Customer list'
   | 'Unknown';
 export interface InFile {
   name: string;
@@ -49,6 +51,8 @@ export interface InFile {
   note?: string;
   portal?: PortalLedger;
   books?: BookFile;
+  /** customer list (name + GSTIN), for the revenue reco */
+  customers?: { name: string; gstin: string }[];
 }
 
 /** expand zips, parse JSON, detect kind. pdfs are parsed by the caller (pdf.js differs in browser / node) */
@@ -134,6 +138,19 @@ async function classifyInner(
             },
           ];
         }
+      }
+      for (const sh of sheets) {
+        const cl = parseCustomerList(sh.rows);
+        if (cl)
+          return [
+            {
+              name,
+              kind: 'Customer list',
+              bytes,
+              customers: cl,
+              note: `${cl.length} customers with GSTIN (used to name customers in the revenue reco)`,
+            },
+          ];
       }
       for (const sh of sheets)
         if (looksLikeBooks(sh.rows)) {

@@ -87,6 +87,9 @@ Top-level tabs (Input Reco, Annual return, GST ledger flow) replace the mode car
   name, so names are learnt from the books (entries carrying the GSTIN, and invoices whose number is in GSTR-1 under one GSTIN).
   Exact names are applied automatically; approximate names (nameScore) and invoice-no. hits are suggested; the user can pick any GSTR-1
   customer by hand or mark a customer unregistered (B2C). Confirmed names are kept in the browser per client GSTIN.
+- Customer list (kind 'Customer list', parseCustomerList): any sheet with a name column and a GSTIN column and no invoice /
+  voucher / tax columns (Tally List of Accounts, Zoho Export Customers). A name with one GSTIN on the list is applied before the
+  learnt names, also for customers missing from GSTR-1 (they then show as not reported, not as B2C). The user's choices still win.
 - Matching is recon.ts reconSales(); B2CS, Table 8 and e-commerce 9(5) rows have no invoices and are compared by month (B2CS: books
   B2C entries carry a "B2CS month", default their invoice month, which the user can change or clear).
 - Books by invoice date, GSTR-1 / 3B by return period. Shifts between months of the same year are not reconciling items (Tobin): they

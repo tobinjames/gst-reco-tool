@@ -74,6 +74,16 @@ vch('Receipt', dt.date(2025, 6, 30), 'RCT/0001', 'HDFC Bank', [('HDFC Bank', -20
 vch('Purchase Order', dt.date(2025, 6, 5), 'PO/1', 'Supplier', [('Supplier', 1180), ('Local Sales 18%', -1000), ('Output CGST 9%', -90), ('Output SGST 9%', -90)])
 wb.save(os.path.join(OUT, 'demo_rev_gl_dump.xlsx'))
 
+# ---- customer list (Zoho "Export Customers" style): just names and GSTINs, plus columns the reader must not mind
+wb = Workbook(); ws = wb.active; ws.title = 'Contacts'
+ws.append(['Display Name', 'Company Name', 'GST Treatment', 'GST Identification Number (GSTIN)', 'Credit Limit', 'Opening Balance'])
+seen = {}
+for b in books:
+    if b[3] and b[2] not in seen: seen[b[2]] = b[3]
+for p, g in seen.items(): ws.append([p, p, 'business_gst', g, 500000, 0])
+ws.append(['Cash Sales', None, 'consumer', None, 0, 0])
+wb.save(os.path.join(OUT, 'demo_rev_customers.xlsx'))
+
 # ---- GSTR-1: what was reported, per return month
 def fp(y, m): return f'{m:02d}{y}'
 g1 = {}  # fp -> {'b2b': {ctin: [inv]}, 'b2cs': [...], 'cdnr': ..., 'nil': ...}

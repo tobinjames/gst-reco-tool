@@ -18,7 +18,11 @@ export interface G1Customer {
 const DOC = /^(B2B|B2BA|CDNR|CDNRA)$/;
 
 /** customers (GSTINs) in GSTR-1 with their document numbers; names learnt from the books rows (Books_Sales layout) */
-export function customersFromG1(g1: RawRow[], bookRows: any[][]): Map<string, G1Customer> {
+export function customersFromG1(
+  g1: RawRow[],
+  bookRows: any[][],
+  list: { name: string; gstin: string }[] = [],
+): Map<string, G1Customer> {
   const out = new Map<string, G1Customer>();
   for (const r of g1) {
     const sec = String(r.info[2]),
@@ -31,6 +35,7 @@ export function customersFromG1(g1: RawRow[], bookRows: any[][]): Map<string, G1
     if (no) c.nos.add(no);
     c.tx += r.amt[0];
   }
+  for (const x of list) out.get(x.gstin)?.names.add(x.name);
   for (const r of bookRows) {
     const g = String(r[3] ?? '')
       .trim()
@@ -119,4 +124,46 @@ export function applyCustomerAliases(rows: any[][], aliases: Map<string, string>
     } else if (String(x[5]) === 'B2B') x[5] = 'B2C';
     return x;
   });
+}
+
+// ---------------------------------------------------------------- customer list file (name + GSTIN)
+const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/;
+const hkey = (v: any) =>
+  String(v ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9/ ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+/** a customer master / list: a GSTIN column and a name column, and no invoice / voucher / tax columns (balances, credit limit etc. are fine). null = not one */
+export function parseCustomerList(rows: any[][]): { name: string; gstin: string }[] | null {
+  for (let i = 0; i < Math.min(15, rows.length); i++) {
+    const H = (rows[i] || []).map(hkey);
+    const g = H.findIndex(h =>
+      /^(gstin( ?\/ ?uin)?|gst ?(no|number|in)|gst identification number gstin|gstin of (customer|party|buyer)|customer gstin|party gstin|gstin number)$/.test(
+        h,
+      ),
+    );
+    if (g < 0) continue;
+    if (H.some(h => /^(date|.* date)$|invoice|taxable|hsn|voucher|cgst|sgst|igst|bill no/.test(h))) return null;
+    const pref = [
+      /^(customer|party|ledger|account|buyer|client)( name)?$/,
+      /^(display name|company name|name|legal name|trade name|particulars)$/,
+    ];
+    let nm = -1;
+    for (const re of pref) {
+      nm = H.findIndex((h, j) => j !== g && re.test(h));
+      if (nm >= 0) break;
+    }
+    if (nm < 0) continue;
+    const out: { name: string; gstin: string }[] = [];
+    for (const r of rows.slice(i + 1)) {
+      const gs = String(r?.[g] ?? '')
+        .trim()
+        .toUpperCase();
+      const name = String(r?.[nm] ?? '').trim();
+      if (name && GSTIN_RE.test(gs)) out.push({ name, gstin: gs });
+    }
+    return out.length ? out : null;
+  }
+  return null;
 }

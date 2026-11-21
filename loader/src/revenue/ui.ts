@@ -24,6 +24,7 @@ import {
 import { GlResult, REV_CLASSES, REV_CLASS_LABEL, RevClass, glDocs } from './ledgers';
 import { ITEMS_SHEET, RevAudit, readItemsSheet, revenueWorkbook } from './workbook';
 import { REV_GUIDE } from './guide';
+import { nameKey } from '../suppliers';
 import { CustSuggestion, G1Customer, applyCustomerAliases, customerSuggestions, customersFromG1 } from './customers';
 
 const $ = (id: string) => document.getElementById(id)! as any;
@@ -68,6 +69,8 @@ export class RevenueTab {
   /** customer name (nameKey) → GSTIN confirmed by the user ('' = unregistered / B2C) */
   private cust: Record<string, string> = {};
   private custSug: CustSuggestion[] = [];
+  private listCount = 0;
+  private listed = new Set<string>();
   private custDir = new Map<string, G1Customer>();
   private custPick = new Map<string, string>();
   private showAllLedgers = false;
@@ -129,10 +132,12 @@ export class RevenueTab {
     const row = (label: string, sub: string, list: string[], set: Set<string>, opt = false) =>
       `<tr><th class="cvl">${label}<span>${sub}</span></th>${list.map(m => (set.has(m) ? '<td class="cv ok">✓</td>' : opt ? '<td class="cv opt">–</td>' : '<td class="cv miss">✕</td>')).join('')}${list.length < 12 ? `<td class="cv na" colspan="${12 - list.length}"></td>` : ''}<td class="cvc ${list.every(m => set.has(m)) ? 'full' : opt ? '' : 'part'}">${list.filter(m => set.has(m)).length}/${list.length}</td></tr>`;
     const regs = c.files.filter(f => f.kind === 'Register').length,
-      books = c.files.filter(f => f.kind === 'Books ledger').length;
+      books = c.files.filter(f => f.kind === 'Books ledger').length,
+      cl = c.files.filter(f => f.kind === 'Customer list').reduce((n, f) => n + (f.customers?.length || 0), 0);
     return `<table class="cov"><tr><th class="cvl">Return</th>${['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'].map(m => `<th class="cvh">${m}</th>`).join('')}<th class="cvh">Loaded</th></tr>
       ${row('GSTR-1', fy, ms, g1s)}${row('GSTR-3B', fy, ms, g3)}${row('GSTR-1', `${ny} · Apr–Oct, optional`, nyMs, g1s, true)}
-      <tr><th class="cvl">Books</th><td colspan="13" class="cv ${regs || books ? 'ok' : 'miss'} wide">${regs ? `✓ sales register: ${regs} file(s)` : books ? `✓ day book / GL dump: ${books} file(s) (no sales register)` : '✕ sales register (preferred), or a day book / GL dump'}</td></tr></table>`;
+      <tr><th class="cvl">Books</th><td colspan="13" class="cv ${regs || books ? 'ok' : 'miss'} wide">${regs ? `✓ sales register: ${regs} file(s)` : books ? `✓ day book / GL dump: ${books} file(s) (no sales register)` : '✕ sales register (preferred), or a day book / GL dump'}</td></tr>
+      <tr><th class="cvl">Customer list<span>optional</span></th><td colspan="13" class="cv ${cl ? 'ok' : 'opt'} wide">${cl ? `✓ ${cl} customers with GSTIN` : '– name + GSTIN of customers: helps when the books have no GSTIN'}</td></tr></table>`;
   }
 
   refresh() {
@@ -178,10 +183,22 @@ export class RevenueTab {
       this.bookRows = [];
     }
     // customers without a GSTIN: exact names automatically, the rest as the user confirmed
-    this.custDir = customersFromG1(this.g1raw, this.bookRows);
+    const list = c.files.filter(f => f.kind === 'Customer list').flatMap(f => f.customers || []);
+    this.custDir = customersFromG1(this.g1raw, this.bookRows, list);
     this.custSug = this.bookRows.length && this.custDir.size ? customerSuggestions(this.bookRows, this.custDir) : [];
     const aliases = new Map<string, string>();
-    for (const x of this.custSug) if (x.exact) aliases.set(x.key, x.exact);
+    // the customer list: a name with one GSTIN there is applied as is (also customers that are not in GSTR-1 at all)
+    const byName = new Map<string, Set<string>>();
+    for (const x of list) {
+      const k = nameKey(x.name);
+      if (k) (byName.get(k) ?? byName.set(k, new Set()).get(k)!).add(x.gstin);
+    }
+    for (const [k, gs] of byName) if (gs.size === 1) aliases.set(k, [...gs][0]);
+    this.listCount = list.length;
+    this.listed = new Set(aliases.keys());
+    for (const x of this.custSug)
+      if (aliases.has(x.key)) x.exact = aliases.get(x.key);
+      else if (x.exact) aliases.set(x.key, x.exact);
     for (const [k, g] of Object.entries(this.cust)) aliases.set(k, g);
     if (aliases.size) this.bookRows = applyCustomerAliases(this.bookRows, aliases);
     this.run();
@@ -418,14 +435,17 @@ export class RevenueTab {
       })
       .join('');
     box.innerHTML =
-      `<p class="muted" style="margin-top:0">GSTR-1 has the customer GSTIN but no name, so names are learnt from the books: entries of the same customer that carry the GSTIN, and invoices whose number is in GSTR-1 under that GSTIN. ${auto.length ? `${auto.length} customer name(s) matched exactly and were applied. ` : ''}A confirmed customer's entries are matched invoice by invoice instead of being taken as B2C.</p>` +
+      `<p class="muted" style="margin-top:0">GSTR-1 has the customer GSTIN but no name, so names are learnt from the books: entries of the same customer that carry the GSTIN, and invoices whose number is in GSTR-1 under that GSTIN. ${auto.length ? `${auto.length} customer name(s) matched exactly and were applied. ` : ''}A confirmed customer's entries are matched invoice by invoice instead of being taken as B2C. ${this.listCount ? `Customer list loaded: ${this.listCount} name(s) with GSTIN.` : 'Tip: drop a customer list (just customer name and GSTIN, from Tally or Zoho) and names are matched from it.'}</p>` +
       (pending.length
         ? `<div class="row" style="justify-content:space-between;margin:6px 0"><span class="muted">${pending.length} customer(s) without a GSTIN to confirm.</span><span>${strong.length ? `<button class="small" id="rvCustStrong">Confirm ${strong.length} where invoice nos. match</button> ` : ''}${noCand.length ? `<button class="small ghost" id="rvCustB2c">Mark ${noCand.length} with no match as unregistered (B2C)</button>` : ''}</span></div>
           <div class="tablewrap"><table class="fl sup"><tr><th>Customer in books</th><th>GSTIN in GSTR-1</th><th></th></tr>${rows}</table></div>`
         : '<p class="ok-text">All customers without a GSTIN are confirmed.</p>') +
       (done.length || auto.length
         ? `<details style="margin-top:10px"><summary class="muted">Matched customers (${done.length + auto.length})</summary><ul class="warns">${[
-            ...auto.map(x => `<li>${esc(x.name)} → ${esc(label(x.exact!))} <span class="muted">(exact name)</span></li>`),
+            ...auto.map(
+              x =>
+                `<li>${esc(x.name)} → ${esc(label(x.exact!))} <span class="muted">(${this.listed.has(x.key) ? 'customer list' : 'exact name'})</span></li>`,
+            ),
             ...done.map(
               x =>
                 `<li>${esc(x.name)} → ${this.cust[x.key] ? esc(label(this.cust[x.key])) : 'Unregistered (B2C)'} <button class="link" data-cundo="${esc(x.key)}">undo</button></li>`,

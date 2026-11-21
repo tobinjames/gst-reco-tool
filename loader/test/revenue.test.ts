@@ -9,7 +9,9 @@ import { parseBooks } from '../src/flow/books';
 import type { ThreeB } from '../src/gstr3b';
 import { RevResult, emptyUser, runRevenue } from '../src/revenue/engine';
 import { glDocs, guessRevenue } from '../src/revenue/ledgers';
-import { applyCustomerAliases, customerSuggestions, customersFromG1 } from '../src/revenue/customers';
+import { applyCustomerAliases, customerSuggestions, customersFromG1, parseCustomerList } from '../src/revenue/customers';
+import { nameKey } from '../src/suppliers';
+import { classify } from '../src/build';
 import { ITEMS_SHEET, readItemsSheet, revenueWorkbook } from '../src/revenue/workbook';
 import { Reader } from '../src/xlsx';
 import { readRows } from '../src/integrity';
@@ -136,6 +138,27 @@ const rgc = runRevenue({
 near(line(rgc, 'NOT_REPORTED'), line(r, 'NOT_REPORTED'), 'GL + customer names: same as the register');
 near(line(rgc, 'B2C'), line(r, 'B2C'), 'GL + customer names: B2C as the register');
 near(line(rgc, 'unx'), [0, 0], 'GL + customer names: ties');
+// a customer list file (name + GSTIN, Zoho export with extra columns): recognised on drop, names give the GSTINs
+const cf = await classify('demo_rev_customers.xlsx', fx('demo_rev_customers.xlsx'), async () => {
+  throw new Error('no pdf');
+});
+assert.equal(cf[0].kind, 'Customer list');
+assert.ok(cf[0].customers!.some(x => x.name === 'Kerala Customer Pvt Ltd' && x.gstin === '32AAACK1111A1Z1'));
+assert.ok(!cf[0].customers!.some(x => x.name === 'Cash Sales'), 'no GSTIN, not listed');
+assert.equal(parseCustomerList(sh.rows), null, 'a sales register is not a customer list');
+const rgl = runRevenue({
+  fy: FY,
+  books: {
+    rows: applyCustomerAliases(glRows, new Map(cf[0].customers!.map(x => [nameKey(x.name), x.gstin] as [string, string]))),
+    source: 'gl',
+  },
+  g1,
+  threeB,
+  user: emptyUser(),
+});
+near(line(rgl, 'NOT_REPORTED'), line(r, 'NOT_REPORTED'), 'GL + customer list: same as the register');
+near(line(rgl, 'B2C'), line(r, 'B2C'), 'GL + customer list: B2C as the register');
+near(line(rgl, 'unx'), [0, 0], 'GL + customer list: ties');
 // ignore the interest ledger entirely
 const rg2 = runRevenue({
   fy: FY,

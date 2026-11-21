@@ -140,6 +140,7 @@ function render() {
     'Portal ledger',
     'Books ledger',
     'Revenue workbook',
+    'Customer list',
     'GSTR-9 (portal)',
     'GSTR-3B',
     'GSTR-1',

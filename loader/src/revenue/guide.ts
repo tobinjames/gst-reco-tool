@@ -71,12 +71,30 @@ export const REV_GUIDE: GuideItem[] = [
     ],
   },
   {
+    source: 'tally',
+    title: 'Customer list: name + GSTIN (optional, when the books have no GSTIN)',
+    steps: [
+      'Gateway of Tally → Display More Reports → List of Accounts → Alt+F5 detailed / F12 Configure: show GSTIN/UIN. Or Multi Masters → Multi Alter for Sundry Debtors.',
+      'Export (Ctrl+E) → Excel. Any sheet with a customer name column and a GSTIN column works.',
+      'Drop it here with the other files: names in the books are matched to the GSTIN on the list.',
+    ],
+  },
+  {
+    source: 'zoho',
+    title: 'Customer list: name + GSTIN (optional)',
+    steps: [
+      'Sales → Customers → menu (☰) → Export Customers → XLSX or CSV.',
+      'Drop it here: Display Name / Company Name and the GSTIN column are read.',
+    ],
+  },
+  {
     source: 'other',
     title: 'Any other software or Excel',
     steps: [
       'Export the sales register (for Busy, Marg and others, the GSTR-1 register) to .xlsx or .csv: one row per invoice or per item line.',
       'Needed: invoice date, invoice no., taxable value. Strongly recommended: customer name, GSTIN, place of supply, CGST, SGST, IGST, cess and the document type (invoice / credit note).',
       'If only a ledger dump is available, it needs date, voucher no., account and debit / credit (or amount) on every line.',
+      'If customer GSTINs are missing in the books, add a two-column sheet: Customer name, GSTIN.',
     ],
   },
 ];
