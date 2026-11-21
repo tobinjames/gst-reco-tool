@@ -42,6 +42,10 @@ export interface RevMeta {
   /** books input rows (Books_Sales layout) */
   bookRows: any[][];
   ledgers?: { name: string; cls: RevClass | null; dr: number; cr: number; lines: number }[];
+  /** the Matching settings in use, in words */
+  settings?: string[];
+  /** books customers without a GSTIN and the GSTIN given to them, with the basis */
+  customers?: { name: string; gstin: string; basis: string; detail: string }[];
 }
 export const ITEMS_SHEET = 'Rev_Items';
 export const ITEMS_HDR = 5; // header row of Rev_Items
@@ -665,6 +669,7 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
     ['Financial year', meta.fy],
     ['Books source', meta.source],
     ['Built', meta.builtAt],
+    ...(meta.settings ?? []).map(t => ['Matching settings', t] as C[]),
     [],
     [
       { v: 'How to read it', s: 'sec' },
@@ -682,6 +687,9 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
       'Every document, B2CS and Table 8 row with both sides. Yellow columns are yours: Your reason, B2CS month, Remark.',
     ],
     ['G1_Rows / 3B_Rows / Books_Lines', 'The data read from the files, untouched.'],
+    ...(meta.customers?.length
+      ? [['Customer_Map', 'Books customers without a GSTIN, the GSTIN given to them and the basis of each mapping.'] as C[]]
+      : []),
     [],
     [
       { v: 'Reasons', s: 'sec' },
@@ -726,6 +734,23 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
     { name: 'B2C_Month', rows: b2, widths: [12, 16, 18, 15, 14, 16, 15], freeze: { row: 4, col: 1 } },
     { name: 'Month_3B', rows: m3, widths: [10, 9, ...Array(m3hdr.length - 2).fill(14)], freeze: { row: 5, col: 2 } },
     itemsSheet,
+    ...(meta.customers?.length
+      ? [
+          {
+            name: 'Customer_Map',
+            rows: [
+              ...title('Customer GSTIN for books entries without one'),
+              [],
+              ['Customer in books', 'GSTIN given', 'Basis', 'Evidence'].map(v => ({ v, s: 'hdr' as const })),
+              ...meta.customers.map(
+                x => [x.name, x.gstin || 'Unregistered (B2C)', x.basis, { v: x.detail, s: 'wrap' as const }] as C[],
+              ),
+            ],
+            widths: [40, 22, 26, 100],
+            freeze: { row: 4 },
+          } as SheetSpec,
+        ]
+      : []),
     {
       name: 'G1_Rows',
       rows: g1Rows,

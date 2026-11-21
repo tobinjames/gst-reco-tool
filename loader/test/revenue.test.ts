@@ -9,7 +9,13 @@ import { parseBooks } from '../src/flow/books';
 import type { ThreeB } from '../src/gstr3b';
 import { RevResult, emptyUser, runRevenue } from '../src/revenue/engine';
 import { glDocs, guessRevenue } from '../src/revenue/ledgers';
-import { applyCustomerAliases, customerSuggestions, customersFromG1, parseCustomerList } from '../src/revenue/customers';
+import {
+  applyCustomerAliases,
+  customerSuggestions,
+  customersFromG1,
+  parseCustomerList,
+  resolveCustomers,
+} from '../src/revenue/customers';
 import { nameKey } from '../src/suppliers';
 import { classify } from '../src/build';
 import { ITEMS_SHEET, readItemsSheet, revenueWorkbook } from '../src/revenue/workbook';
@@ -111,23 +117,40 @@ near(rg.books.turnover, r.books.turnover, 'same turnover as the register');
 near(line(rg, 'B2C'), [-2000 - 40000 + 10000, -360 - 7200 + 1800], 'GL: entries without GSTIN not in GSTR-1 are taken as B2C');
 near(line(rg, 'NEXT_FY'), [-30000, -5400], 'GL: next year by invoice no.');
 near(line(rg, 'unx'), [0, 0], 'GL: ties');
-// customer names: GSTR-1 has no names, the GL dump has no GSTINs; names are learnt from invoice numbers found in GSTR-1
+// customer names: GSTR-1 has no names, the GL dump has no GSTINs; a customer is mapped when its invoice no. AND amount agree
 const glRows = gl.docs.map(d => d.row);
 const dirC = customersFromG1(g1, glRows);
 const sug = customerSuggestions(glRows, dirC);
-assert.equal(
-  sug.find(x => x.name === 'Kerala Customer Pvt Ltd')!.exact,
-  '32AAACK1111A1Z1',
-  'Kerala learnt from its invoice nos.',
-);
-assert.equal(sug.find(x => x.name === 'Chennai Customer Pvt Ltd')!.exact, '33AAACC2222B1Z2');
+const ker = sug.find(x => x.name === 'Kerala Customer Pvt Ltd')!;
+assert.equal(ker.exact, undefined, 'no books entry carries the GSTIN: not a "same name" mapping');
+assert.equal(ker.inv?.gstin, '32AAACK1111A1Z1', 'Kerala: invoice no. + amount agree');
+assert.ok(ker.inv!.hits >= 1 && ker.inv!.sample.length >= 1, 'the agreeing invoices are kept as the basis');
+assert.equal(sug.find(x => x.name === 'Chennai Customer Pvt Ltd')!.inv?.gstin, '33AAACC2222B1Z2');
 assert.equal(sug.find(x => x.name === 'Cash Sales')!.cands.length, 0, 'cash sales: no GSTR-1 customer');
 // a spelling variant with no invoice in GSTR-1 is suggested by name, for the user to confirm
 const variant = [[45900, 'SAL/9999', 'Kerala Customers P. Ltd', '', '', 'B2B', 'INV', '', '', null, 18, 1000, 90, 90, 0, 0]];
 const vs = customerSuggestions(variant, dirC);
 assert.equal(vs[0].cands[0]?.gstin, '32AAACK1111A1Z1', 'name variant suggested');
-assert.ok(!vs[0].exact && !vs[0].strong, 'variant needs the user');
-const aliases = new Map<string, string>(sug.filter(x => x.exact).map(x => [x.key, x.exact!] as [string, string]));
+assert.ok(!vs[0].exact && !vs[0].strong && !vs[0].inv, 'variant needs the user');
+// same invoice no. but another amount: suggested (number only), never mapped
+const kerNo = [...dirC.get('32AAACK1111A1Z1')!.inv.values()][0];
+const wrongAmt = [[45900, kerNo.no, 'Some Other Buyer', '', '', 'B2B', 'INV', '', '', null, 18, kerNo.tx + 500, 90, 90, 0, 0]];
+const wa = customerSuggestions(wrongAmt, dirC)[0];
+assert.ok(!wa.inv && wa.cands[0].noHits === 1 && wa.cands[0].invHits === 0, 'number alone does not map');
+// rules and their order: user > list > same name > invoice no. + amount; '?' = ask me
+const RULES = { list: true, exact: true, invAmt: true, invAuto: true, invMin: 1 };
+let mp = resolveCustomers(sug, RULES, new Map(), {});
+assert.equal(mp.get(ker.key)?.how, 'invamt');
+assert.match(mp.get(ker.key)!.detail, /agree with GSTR-1 under this GSTIN by number and amount/);
+assert.equal(resolveCustomers(sug, { ...RULES, invAuto: false }, new Map(), {}).has(ker.key), false, 'suggest only');
+assert.equal(resolveCustomers(sug, { ...RULES, invMin: 99 }, new Map(), {}).has(ker.key), false, 'too few invoices');
+assert.equal(resolveCustomers(sug, RULES, new Map(), { [ker.key]: '?' }).has(ker.key), false, 'user asked to choose');
+mp = resolveCustomers(sug, RULES, new Map([[ker.key, '32AAACK1111A1Z1']]), {});
+assert.equal(mp.get(ker.key)?.how, 'list');
+assert.equal(resolveCustomers(sug, RULES, new Map(), { [ker.key]: '' }).get(ker.key)?.how, 'user');
+const aliases = new Map<string, string>(
+  [...resolveCustomers(sug, RULES, new Map(), {})].map(([k, m]) => [k, m.gstin] as [string, string]),
+);
 const rgc = runRevenue({
   fy: FY,
   books: { rows: applyCustomerAliases(glRows, aliases), source: 'gl' },

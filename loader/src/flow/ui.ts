@@ -43,6 +43,7 @@ import { process2b } from '../gstr2b';
 import { esc, fyShift, inr, store } from '../util';
 import { FLOW_GUIDE } from './guide';
 import { readTable } from '../register';
+import { Settings, describe } from '../settings';
 
 const fmt = (v: number) => (Math.abs(v) < 0.005 ? '–' : inr(v));
 const $ = (id: string) => document.getElementById(id)! as any;
@@ -71,6 +72,8 @@ export interface Ctx {
   legal: string;
   active: boolean;
   /** purchase register rows (optional cross-check) */ register?: () => any[][] | undefined;
+  /** the tab's matching settings */
+  settings?: () => Settings;
 }
 
 export class FlowTab {
@@ -166,6 +169,7 @@ export class FlowTab {
       overrides: this.st.ov,
       bal: this.st.bal,
       threeB,
+      opts: c.settings?.().flow,
     };
     try {
       this.res = portal.length || books.length ? run(this.inp) : null;
@@ -189,7 +193,7 @@ export class FlowTab {
       reg = undefined;
     }
     this.year = this.res ? yearRecon(this.res, this.inp, { has2b: raw2b.length > 0 }) : null;
-    this.itc = this.res && raw2b.length ? itcThreeWay(this.res, this.inp, raw2b, reg) : null;
+    this.itc = this.res && raw2b.length ? itcThreeWay(this.res, this.inp, raw2b, reg, c.settings?.().match) : null;
     this.renderPortal(portal);
     this.renderBooks(books, accs, regs);
     this.renderBalances(books, portal);
@@ -904,6 +908,7 @@ export class FlowTab {
         audit: this.st.audit,
         year: this.year,
         itc: this.itc,
+        settings: c.settings ? describe('flow', c.settings()) : undefined,
         files: c.files
           .filter(f => ['Portal ledger', 'Books ledger', 'GSTR-3B'].includes(f.kind))
           .map(f => ({ name: f.name, kind: f.kind, note: f.note || '' })),

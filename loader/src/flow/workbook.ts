@@ -26,6 +26,8 @@ export interface FlowMeta {
   builtAt: string;
   year: Year;
   itc: Itc3 | null;
+  /** the Matching settings in use, in words */
+  settings?: string[];
 }
 
 const HEADS_TXT: Record<HeadK, string> = { IGST: 'IGST', CGST: 'CGST', SGST: 'SGST', CESS: 'Cess', ALL: 'Not split by head' };
@@ -750,6 +752,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
         s: 'wrap',
       },
     ],
+    ...(meta.settings ?? []).map(t => ['Matching settings', { v: t, s: 'wrap' }] as C[]),
     [],
     [
       { v: 'Files used', s: 'sec' },

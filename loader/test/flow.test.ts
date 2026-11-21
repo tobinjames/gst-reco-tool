@@ -227,6 +227,30 @@ if (process.env.SHOW) {
     for (const x of r.monthly.filter(x => x.bucket === process.env.DBG).sort((a, b) => a.month.localeCompare(b.month)))
       console.log(x.bucket, x.head, x.month, x.b, x.p);
 }
+// Matching settings: the defaults are the old behaviour; a rule turned off leaves its differences unexplained, still tied
+{
+  const same = run({ ...inp, opts: { tol: 1, rules: {}, entryMonths: 3, monthGap: 2 } });
+  assert.deepEqual(
+    same.items.map(i => [i.category, i.bucket]),
+    r.items.map(i => [i.category, i.bucket]),
+    'default settings = previous behaviour',
+  );
+  const cats = new Set(r.items.map(i => i.category));
+  assert.ok(cats.has('Timing') && cats.has('Tax head'), 'demo has timing and tax head items');
+  const off = run({ ...inp, opts: { rules: { timing: false, head: false } } });
+  assert.ok(
+    !off.items.some(i => i.category === 'Timing' || (i.category === 'Tax head' && i.months.length)),
+    'rules off: no such items (the structural "compared in total" head item stays)',
+  );
+  assert.ok(off.items.filter(i => !i.explained).length > r.items.filter(i => !i.explained).length, 'more left unexplained');
+  const ks = new Set([...Object.keys(off.flowBooks.rows), ...Object.keys(off.flowPortal.rows)]);
+  for (const k of ks)
+    for (const h of HEAD_KEYS) {
+      const d = (off.flowBooks.rows[k]?.[h] || 0) - (off.flowPortal.rows[k]?.[h] || 0);
+      const it = off.items.filter(i => i.bucket === k).reduce((s2, i) => s2 + i.amt[h], 0);
+      assert.ok(Math.abs(d - it) < 0.01, `rules off, ${k} ${h}: difference ${d} vs items ${it}`);
+    }
+}
 console.log('flow: all checks passed', r.items.length, 'items');
 
 // workbook: written with cached values; scripts/flow_recalc.py recalculates it in LibreOffice and compares

@@ -799,6 +799,38 @@
         color: var(--muted);
         background: #f0f1f5;
       }
+      /* matching settings */
+      .set-sec {
+        display: grid;
+        gap: 10px;
+      }
+      .set-sec + .set-sec {
+        border-top: 1px dashed var(--line);
+        padding-top: 14px;
+      }
+      .set-sec h3 {
+        margin: 0;
+        font-size: 15px;
+        color: var(--strong);
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .set-sec p {
+        margin: 0;
+      }
+      ul.set-fixed {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      p.set-now {
+        font-size: 13px;
+        background: #f4f5fb;
+        border-radius: 8px;
+        padding: 6px 10px;
+      }
       /* review matches */
       details.rv-set {
         border: 1px solid var(--line);
@@ -1550,7 +1582,7 @@
         </svg>
         <div class="brandname"><b>GST Reco Loader</b><span>James &amp; James LLP · Taxation</span></div>
         <div class="spacer"></div>
-        <span class="pill v">v0.11</span>
+        <span class="pill v">v0.12</span>
         <span class="pill"
           ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
             <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -1561,9 +1593,9 @@
       <nav class="tabs" role="tablist" aria-label="Modules">
         <div class="tabs-in">
           <button class="tab" role="tab" data-tab="itc"><b>Input Reco</b><span>GSTR-2B vs purchases</span></button>
-          <button class="tab" role="tab" data-tab="annual"><b>Annual return</b><span>GSTR-9 / 9C</span></button>
           <button class="tab" role="tab" data-tab="flow"><b>GST ledger flow</b><span>Portal ledgers vs books</span></button>
           <button class="tab" role="tab" data-tab="revenue"><b>Revenue reco</b><span>Books vs GSTR-1 vs 3B</span></button>
+          <button class="tab" role="tab" data-tab="annual"><b>Annual return</b><span>GSTR-9 / 9C</span></button>
         </div>
       </nav>
     </header>
@@ -1835,14 +1867,6 @@
         </p>
         <div id="regs"></div>
       </section>
-      <section class="card" id="supcard" data-tabs="itc annual" data-sub="c" style="display: none">
-        <h2><span class="num">2c</span> Confirm supplier names</h2>
-        <p class="muted">
-          Purchase lines without a supplier GSTIN get it from GSTR-2B by supplier name. Names that differ only in spelling,
-          abbreviations or "Pvt Ltd" need your confirmation first; unconfirmed ones are matched by invoice no. and amount only.
-        </p>
-        <div id="sups"></div>
-      </section>
       <section class="card" data-tabs="itc annual flow revenue">
         <h2><span class="num">3</span> Confirm client &amp; year</h2>
         <div class="row">
@@ -1851,11 +1875,27 @@
           <label style="flex: 1">Legal name<input id="legal" placeholder="detected from GSTR-3B" style="width: 100%" /></label>
         </div>
       </section>
+      <section class="card" id="setcard" data-tabs="itc annual flow revenue">
+        <h2><span class="num">4</span> Matching settings</h2>
+        <p class="muted" style="margin-top: -8px">
+          Choose how this tab matches and explains before anything is reconciled: which rules run, the tolerances and the date
+          windows. Each section says what is in use; the same lines go into the workbook's Read Me.
+        </p>
+        <div id="settings"></div>
+      </section>
+      <section class="card" id="supcard" data-tabs="itc annual" data-sub="b" style="display: none">
+        <h2><span class="num">2c</span> Confirm supplier names</h2>
+        <p class="muted">
+          Purchase lines without a supplier GSTIN get it from GSTR-2B by supplier name. Names that differ only in spelling,
+          abbreviations or "Pvt Ltd" need your confirmation first; unconfirmed ones are matched by invoice no. and amount only.
+        </p>
+        <div id="sups"></div>
+      </section>
       <section class="card" id="rvcard" data-tabs="itc annual" style="display: none">
         <h2><span class="num">4</span> Review matches</h2>
         <p class="muted">
-          The reconciliation, run here before anything is built. Change how documents are matched, filter by status, party or
-          period with totals, and match or unmatch documents by hand. Your choices go into the workbook.
+          The reconciliation, run here before anything is built, with the rules chosen under Matching settings. Filter by status,
+          party or period with totals, and match or unmatch documents by hand. Your choices go into the workbook.
         </p>
         <div id="rv"></div>
       </section>

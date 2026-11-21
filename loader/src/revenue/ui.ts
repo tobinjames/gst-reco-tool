@@ -25,7 +25,18 @@ import { GlResult, REV_CLASSES, REV_CLASS_LABEL, RevClass, glDocs } from './ledg
 import { ITEMS_SHEET, RevAudit, readItemsSheet, revenueWorkbook } from './workbook';
 import { REV_GUIDE } from './guide';
 import { nameKey } from '../suppliers';
-import { CustSuggestion, G1Customer, applyCustomerAliases, customerSuggestions, customersFromG1 } from './customers';
+import {
+  CUST_HOW,
+  CustMapping,
+  CustSuggestion,
+  G1Customer,
+  applyCustomerAliases,
+  customerSuggestions,
+  customersFromG1,
+  resolveCustomers,
+} from './customers';
+import { CustSettings, DEFAULT_CUST, describe, defaults } from '../settings';
+import { DEFAULT_MATCH } from '../recon';
 
 const $ = (id: string) => document.getElementById(id)! as any;
 const fmt = (v: number) => (Math.abs(v) < 0.005 ? '–' : inr(v));
@@ -44,6 +55,8 @@ export interface RevCtx {
   /** sales register rows mapped in "Map register columns" (undefined = none, or not mapped yet) */
   salesRows: () => any[][] | undefined;
   match?: () => MatchOptions | undefined;
+  /** how customers without a GSTIN get one (Matching settings) */
+  cust?: () => CustSettings | undefined;
 }
 interface State {
   user: UserState;
@@ -70,7 +83,8 @@ export class RevenueTab {
   private cust: Record<string, string> = {};
   private custSug: CustSuggestion[] = [];
   private listCount = 0;
-  private listed = new Set<string>();
+  /** customer name (nameKey) → GSTIN in use and the basis */
+  private custMap = new Map<string, CustMapping>();
   private custDir = new Map<string, G1Customer>();
   private custPick = new Map<string, string>();
   private showAllLedgers = false;
@@ -182,24 +196,26 @@ export class RevenueTab {
       this.source = 'none';
       this.bookRows = [];
     }
-    // customers without a GSTIN: exact names automatically, the rest as the user confirmed
-    const list = c.files.filter(f => f.kind === 'Customer list').flatMap(f => f.customers || []);
-    this.custDir = customersFromG1(this.g1raw, this.bookRows, list);
-    this.custSug = this.bookRows.length && this.custDir.size ? customerSuggestions(this.bookRows, this.custDir) : [];
-    const aliases = new Map<string, string>();
+    // customers without a GSTIN: by the methods chosen under Matching settings, each with its basis; the user's choice wins
+    const cs = c.cust?.() ?? DEFAULT_CUST,
+      mo = c.match?.() ?? DEFAULT_MATCH;
+    const list = cs.list ? c.files.filter(f => f.kind === 'Customer list').flatMap(f => f.customers || []) : [];
+    this.custDir = customersFromG1(this.g1raw, this.bookRows, list, mo.tol);
+    this.custSug =
+      this.bookRows.length && this.custDir.size
+        ? customerSuggestions(this.bookRows, this.custDir, { minScore: cs.nameMin / 100, tol: mo.tol, compare: mo.compare })
+        : [];
     // the customer list: a name with one GSTIN there is applied as is (also customers that are not in GSTR-1 at all)
     const byName = new Map<string, Set<string>>();
     for (const x of list) {
       const k = nameKey(x.name);
       if (k) (byName.get(k) ?? byName.set(k, new Set()).get(k)!).add(x.gstin);
     }
-    for (const [k, gs] of byName) if (gs.size === 1) aliases.set(k, [...gs][0]);
+    const listAliases = new Map<string, string>();
+    for (const [k, gs] of byName) if (gs.size === 1) listAliases.set(k, [...gs][0]);
     this.listCount = list.length;
-    this.listed = new Set(aliases.keys());
-    for (const x of this.custSug)
-      if (aliases.has(x.key)) x.exact = aliases.get(x.key);
-      else if (x.exact) aliases.set(x.key, x.exact);
-    for (const [k, g] of Object.entries(this.cust)) aliases.set(k, g);
+    this.custMap = resolveCustomers(this.custSug, cs, listAliases, this.cust);
+    const aliases = new Map([...this.custMap].map(([k, m]) => [k, m.gstin] as [string, string]));
     if (aliases.size) this.bookRows = applyCustomerAliases(this.bookRows, aliases);
     this.run();
     this.importWorkbooks().then(changed => {
@@ -402,55 +418,73 @@ export class RevenueTab {
   private renderCustomers() {
     const card = $('rv-cust'),
       box = $('rvCust');
-    const sug = this.custSug.filter(x => !x.exact);
-    const pending = sug.filter(x => this.cust[x.key] === undefined);
-    const done = sug.filter(x => this.cust[x.key] !== undefined);
-    const auto = this.custSug.filter(x => x.exact);
     card.style.display = this.custSug.length ? '' : 'none';
     if (!this.custSug.length) return;
+    const cs = this.ctx().cust?.() ?? DEFAULT_CUST;
+    const pending = this.custSug.filter(x => !this.custMap.has(x.key));
+    const done = this.custSug.filter(x => this.custMap.has(x.key));
     const all = [...this.custDir.values()].sort((a, b) => b.tx - a.tx);
     const label = (g: string) => {
       const c = this.custDir.get(g);
       const n = c ? [...c.names][0] : '';
       return `${g}${n ? ' · ' + n : ''}${c ? ` · ${c.docs} doc(s) in GSTR-1` : ''}`;
     };
-    const pickOf = (x: CustSuggestion) => this.custPick.get(x.key) ?? x.cands[0]?.gstin ?? '';
-    const strong = pending.filter(x => x.strong);
+    const pickOf = (x: CustSuggestion) => {
+      const p = this.custPick.get(x.key) ?? x.inv?.gstin ?? x.cands[0]?.gstin ?? '';
+      return p;
+    };
+    const strong = pending.filter(x => x.inv);
     const noCand = pending.filter(x => !x.cands.length);
+    const why = (c: { invHits: number; noHits: number; score: number }) =>
+      [
+        c.invHits ? `${c.invHits} invoice(s): no. + amount agree` : '',
+        c.noHits ? `${c.noHits} no. only (amount differs)` : '',
+        `name ${Math.round(c.score * 100)}%`,
+      ]
+        .filter(Boolean)
+        .join(' · ');
     const rows = [...pending]
-      .sort((a, b) => +!!b.cands.length - +!!a.cands.length)
+      .sort((a, b) => +!!b.inv - +!!a.inv || +!!b.cands.length - +!!a.cands.length)
       .map(x => {
         const cur = pickOf(x);
         const candG = new Set(x.cands.map(c => c.gstin));
+        const top = x.cands[0];
+        const basis = x.inv
+          ? `<span class="tag ok-tag">invoice no. + amount</span> <span class="muted small">${x.inv.hits} of ${x.inv.of} invoice(s) agree with ${esc(x.inv.gstin)}: ${esc(x.inv.sample.join(', '))}${!cs.invAmt ? ' · rule off in settings' : !cs.invAuto ? ' · set to suggest only' : x.inv.hits < cs.invMin ? ` · settings need ${cs.invMin}` : ''}</span>`
+          : top
+            ? `<span class="muted small">${esc(why(top))}${top.noHits && !top.invHits ? ' · amounts differ, so not mapped' : ''}</span>`
+            : '<span class="muted small">No GSTR-1 customer by name, invoice no. or amount</span>';
         return `<tr><td><b>${esc(x.name)}</b><div class="muted small">${x.docs} document(s) · taxable ${fmt(x.tx)}</div></td>
         <td><select data-cpick="${esc(x.key)}" style="max-width:520px">
-          ${x.cands.length ? `<optgroup label="Suggested">${x.cands.map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(label(c.gstin))} · ${c.invHits ? `${c.invHits} invoice no.(s) match · ` : ''}name ${Math.round(c.score * 100)}%</option>`).join('')}</optgroup>` : ''}
+          ${x.cands.length ? `<optgroup label="Suggested">${x.cands.map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(label(c.gstin))} · ${esc(why(c))}</option>`).join('')}</optgroup>` : ''}
           <optgroup label="Any customer in GSTR-1">${all
             .filter(c => !candG.has(c.gstin))
             .map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(label(c.gstin))}</option>`)
             .join('')}</optgroup>
           <option value="-" ${cur === '-' ? 'selected' : ''}>Unregistered customer (B2C)</option>
-          ${!cur ? '<option value="" selected>— pick —</option>' : ''}</select></td>
-        <td class="act"><button class="small" data-cok="${esc(x.key)}">Confirm</button>${x.strong ? ' <span class="tag ok-tag">invoice nos. match</span>' : ''}</td></tr>`;
+          ${!cur ? '<option value="" selected>— pick —</option>' : ''}</select><div style="margin-top:4px">${basis}</div></td>
+        <td class="act"><button class="small" data-cok="${esc(x.key)}">Confirm</button></td></tr>`;
       })
       .join('');
+    const howTag = (m: CustMapping) => `<span class="tag ${m.how === 'user' ? '' : 'ok-tag'}">${esc(CUST_HOW[m.how])}</span>`;
+    const doneRows = done
+      .map(x => {
+        const m = this.custMap.get(x.key)!;
+        return `<tr><td><b>${esc(x.name)}</b><div class="muted small">${x.docs} document(s) · taxable ${fmt(x.tx)}</div></td>
+        <td>${m.gstin ? esc(label(m.gstin)) : 'Unregistered (B2C)'}</td><td>${howTag(m)}<div class="muted small">${esc(m.detail)}</div></td>
+        <td class="act">${m.how === 'user' ? `<button class="link" data-cundo="${esc(x.key)}">undo</button>` : `<button class="link" data-cask="${esc(x.key)}">not right? choose</button>`}</td></tr>`;
+      })
+      .join('');
+    const methods = describe('revenue', { ...defaults('revenue'), cust: cs })[1];
     box.innerHTML =
-      `<p class="muted" style="margin-top:0">GSTR-1 has the customer GSTIN but no name, so names are learnt from the books: entries of the same customer that carry the GSTIN, and invoices whose number is in GSTR-1 under that GSTIN. ${auto.length ? `${auto.length} customer name(s) matched exactly and were applied. ` : ''}A confirmed customer's entries are matched invoice by invoice instead of being taken as B2C. ${this.listCount ? `Customer list loaded: ${this.listCount} name(s) with GSTIN.` : 'Tip: drop a customer list (just customer name and GSTIN, from Tally or Zoho) and names are matched from it.'}</p>` +
+      `<p class="muted" style="margin-top:0">GSTR-1 has the customer GSTIN but no name, so a books customer without a GSTIN gets one from the customer list, the same name elsewhere in the books, or invoices whose number <b>and</b> amount agree with GSTR-1 documents of one GSTIN. <b>In use:</b> ${esc(methods.replace(/^Customer GSTIN by: /, ''))} (change it under Matching settings). A mapped customer's entries are matched invoice by invoice instead of being taken as B2C. ${this.listCount ? `Customer list loaded: ${this.listCount} name(s) with GSTIN.` : 'Tip: drop a customer list (just customer name and GSTIN, from Tally or Zoho) and names are matched from it.'}</p>` +
       (pending.length
-        ? `<div class="row" style="justify-content:space-between;margin:6px 0"><span class="muted">${pending.length} customer(s) without a GSTIN to confirm.</span><span>${strong.length ? `<button class="small" id="rvCustStrong">Confirm ${strong.length} where invoice nos. match</button> ` : ''}${noCand.length ? `<button class="small ghost" id="rvCustB2c">Mark ${noCand.length} with no match as unregistered (B2C)</button>` : ''}</span></div>
-          <div class="tablewrap"><table class="fl sup"><tr><th>Customer in books</th><th>GSTIN in GSTR-1</th><th></th></tr>${rows}</table></div>`
-        : '<p class="ok-text">All customers without a GSTIN are confirmed.</p>') +
-      (done.length || auto.length
-        ? `<details style="margin-top:10px"><summary class="muted">Matched customers (${done.length + auto.length})</summary><ul class="warns">${[
-            ...auto.map(
-              x =>
-                `<li>${esc(x.name)} → ${esc(label(x.exact!))} <span class="muted">(${this.listed.has(x.key) ? 'customer list' : 'exact name'})</span></li>`,
-            ),
-            ...done.map(
-              x =>
-                `<li>${esc(x.name)} → ${this.cust[x.key] ? esc(label(this.cust[x.key])) : 'Unregistered (B2C)'} <button class="link" data-cundo="${esc(x.key)}">undo</button></li>`,
-            ),
-          ].join('')}</ul></details>`
+        ? `<div class="row" style="justify-content:space-between;margin:6px 0"><span class="muted">${pending.length} customer(s) without a GSTIN to confirm.</span><span>${strong.length ? `<button class="small" id="rvCustStrong">Confirm ${strong.length} where invoice no. + amount agree</button> ` : ''}${noCand.length ? `<button class="small ghost" id="rvCustB2c">Mark ${noCand.length} with no match as unregistered (B2C)</button>` : ''}</span></div>
+          <div class="tablewrap"><table class="fl sup"><tr><th>Customer in books</th><th>GSTIN in GSTR-1 and why it is suggested</th><th></th></tr>${rows}</table></div>`
+        : '<p class="ok-text">All customers without a GSTIN are mapped.</p>') +
+      (done.length
+        ? `<details style="margin-top:10px" ${pending.length ? '' : 'open'}><summary class="muted">Mapped customers and the basis of each (${done.length})</summary>
+          <div class="tablewrap"><table class="fl sup"><tr><th>Customer in books</th><th>GSTIN given</th><th>Basis</th><th></th></tr>${doneRows}</table></div></details>`
         : '');
     box
       .querySelectorAll('select[data-cpick]')
@@ -458,8 +492,14 @@ export class RevenueTab {
     const confirm = (x: CustSuggestion, v: string) => {
       if (!v) return;
       const g = v === '-' ? '' : v;
+      const from = this.custMap.get(x.key);
       this.cust[x.key] = g;
-      this.log('Customer GSTIN', x.name, '(none)', g ? label(g) : 'Unregistered (B2C)');
+      this.log(
+        'Customer GSTIN',
+        x.name,
+        from ? `${from.gstin || 'B2C'} (${CUST_HOW[from.how]})` : '(none)',
+        g ? label(g) : 'Unregistered (B2C)',
+      );
     };
     box.querySelectorAll('button[data-cok]').forEach(
       (el: any) =>
@@ -478,6 +518,16 @@ export class RevenueTab {
           this.refresh();
         }),
     );
+    box.querySelectorAll('button[data-cask]').forEach(
+      (el: any) =>
+        (el.onclick = () => {
+          const x = done.find(p => p.key === el.dataset.cask);
+          const m = this.custMap.get(el.dataset.cask);
+          this.cust[el.dataset.cask] = '?';
+          if (x && m) this.log('Customer GSTIN', x.name, `${m.gstin || 'B2C'} (${CUST_HOW[m.how]})`, 'to be chosen by you');
+          this.refresh();
+        }),
+    );
     const nb = box.querySelector('#rvCustB2c');
     if (nb)
       nb.onclick = () => {
@@ -487,7 +537,7 @@ export class RevenueTab {
     const st = box.querySelector('#rvCustStrong');
     if (st)
       st.onclick = () => {
-        for (const x of strong) confirm(x, x.cands[0].gstin);
+        for (const x of strong) confirm(x, x.inv!.gstin);
         this.refresh();
       };
   }
@@ -723,7 +773,7 @@ export class RevenueTab {
         return `<tr class="${this.sel.has(i.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-sel="${esc(i.id)}" ${this.sel.has(i.id) ? 'checked' : ''}/></td>
         <td>${reasonSel(i.userReason, `data-ir="${esc(i.id)}"`, `— ${esc(REASON[i.derived].label)} —`)}${i.userReason ? '' : i.reason !== i.derived ? `<div class="muted small">${esc(REASON[i.reason].label)}</div>` : ''}${i.note ? `<div class="muted small">${esc(i.note)}</div>` : ''}</td>
         <td>${esc(i.status)}<div class="muted small">${esc(i.type)}${i.dt && i.dt !== 'INV' ? ' · ' + esc(i.dt) : ''}${i.basis ? ' · ' + esc(i.basis) : ''}</div></td>
-        <td>${esc(i.party || '—')}<div class="muted small">${esc(i.gstin)}</div></td>
+        <td>${esc(i.party || '—')}<div class="muted small">${esc(i.gstin)}${this.custMap.get(nameKey(i.party))?.gstin ? ` · GSTIN by ${esc(CUST_HOW[this.custMap.get(nameKey(i.party))!.how].toLowerCase())}` : ''}</div></td>
         <td>${esc(i.bNo)}<div class="muted small">${esc(i.bDate)}</div></td>
         <td>${esc(i.gNo)}<div class="muted small">${esc(i.gSection)} ${ymLabel(i.gYm)}${i.hasG && !i.g[0] && i.gAny[0] ? ' · other year' : ''}</div></td>
         <td class="r">${i.hasB ? fmt(i.b[0]) : ''}</td><td class="r">${i.hasG ? fmt(i.gAny[0]) : ''}</td><td class="r ${Math.abs(dT) > r.tol ? 'neg' : ''}">${fmt(dT)}</td><td class="r ${Math.abs(dX) > r.tol ? 'neg' : ''}">${fmt(dX)}</td>
@@ -847,6 +897,17 @@ export class RevenueTab {
         threeB: c.files.filter(f => f.kind === 'GSTR-3B' && f.threeB).map(f => f.threeB!),
         bookRows: this.bookRows,
         ledgers: this.source === 'gl' ? this.gl?.ledgers.map(l => ({ ...l, cls: this.cls[l.name] ?? null })) : undefined,
+        settings: describe('revenue', {
+          ...defaults('revenue'),
+          match: c.match?.() ?? DEFAULT_MATCH,
+          cust: c.cust?.() ?? DEFAULT_CUST,
+        }),
+        customers: this.custSug
+          .filter(x => this.custMap.has(x.key))
+          .map(x => {
+            const m = this.custMap.get(x.key)!;
+            return { name: x.name, gstin: m.gstin, basis: CUST_HOW[m.how], detail: m.detail };
+          }),
       });
       const name = `Revenue_Reco_${(c.gstin || 'client').trim()}_${c.fy}.xlsx`;
       const url = URL.createObjectURL(
