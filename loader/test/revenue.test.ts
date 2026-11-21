@@ -207,8 +207,9 @@ const bytes = await revenueWorkbook(r2, {
 });
 const rd = await Reader.open(bytes);
 for (const s of [
-  'Read Me',
-  'Dashboard',
+  'Index',
+  'Instructions',
+  'Summary',
   'Books_to_GSTR1',
   'GSTR1_to_3B',
   'Month_wise',

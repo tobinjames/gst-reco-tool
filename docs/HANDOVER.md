@@ -166,6 +166,13 @@ books files (sales / purchase register, GL dump, customer list) may be replaced.
   again did before; lines corrected by hand in those sheets are replaced (remove the register from the file list to keep them).
 - The browser store keeps values in memory when localStorage is blocked, so a restore also works in a private window.
 
+## Workpaper format and annual return from workpapers (v0.15, asked by Tobin 21 Nov 2026)
+- Every workpaper (ITC, Revenue reco, GST ledger flow, GSTR-9/9C) is Aptos, opens on an **Index** (cover, contents with links, how to read, colour key, Prepared/Reviewed sign-off), has one **Instructions** sheet, a **Summary** sheet, and a "Back to Index" link on each sheet. Python templates: workbook/jjfront.py; TS writer: src/wpfront.ts (heading, indexSheet, instructionsSheet).
+- Formulas are meant to be read without the tool: one SUMIFS per cell. ITC/annual Recon_Purchases has helper columns AD-AK (books tax, 2B tax, claimable per head = MIN on matched rows, claimable tax, books month: src/reconsheets.ts withHelpers); flow Books_Lines W / Portal_Lines U hold the Year_Compare movement label.
+- Annual return tab, recommended route: drop the saved Input Reco, Revenue reco and GST ledger flow workpapers. They bring their source files (state.ts), the Input Reco match codes/remarks carry to the annual Recon_Purchases (build.ts reconStateFor), its matching settings are copied to the annual tab, and the **Workpapers** sheet compares each workpaper's headline figures (src/annualwp.ts reads them; rows in src/wprows.json from build_workbook.py) with the GSTR-9 cells (difference + OK / Look at, counted on Summary). Direct from returns and registers still works, labelled not recommended. A flow workpaper from before v0.15 (no Summary) only gives a warning.
+- Fixed: ITC / GSTR-9 workbooks saved by v0.14 opened as damaged in Excel (hidden _JJ sheets used an undeclared r: prefix). ITC file name periods are sorted.
+- scripts/annual_wp.ts <folder> <out.xlsx> builds an annual workbook from saved workpapers without the browser (registers are not mapped there).
+
 ## Key decisions (agreed with Tobin)
 - No macros and no Excel 365 functions (SUMIFS/INDEX/MATCH only). The browser does the parsing, because Power Query "From PDF" isn't available to every user.
 - Hosting: the single HTML on a shared drive works offline; optional Cloudflare Pages at gst.jjglobal.in behind Cloudflare Access.

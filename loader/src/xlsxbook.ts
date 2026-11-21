@@ -18,7 +18,12 @@ export type Style =
   | 'ok'
   | 'bad'
   | 'link'
-  | 'input';
+  | 'input'
+  | 'hlink'
+  | 'band'
+  | 'bandSub'
+  | 'kpi'
+  | 'formula';
 const STYLE_ID: Record<Style, number> = {
   title: 1,
   sub: 2,
@@ -35,6 +40,11 @@ const STYLE_ID: Record<Style, number> = {
   bad: 13,
   link: 14,
   input: 15,
+  hlink: 16,
+  band: 17,
+  bandSub: 18,
+  kpi: 19,
+  formula: 20,
 };
 export interface CellObj {
   v?: string | number | null;
@@ -49,6 +59,8 @@ export interface SheetSpec {
   freeze?: { row: number; col?: number };
   filter?: { row: number; cols: number };
   tab?: string;
+  /** row heights (points) by row number (1-based) */
+  heights?: Record<number, number>;
   /** drop-down lists: cells (e.g. "T6:T500") and the list (a range like "Lists!$A$2:$A$20") */
   lists?: { sqref: string; list: string }[];
 }
@@ -93,7 +105,10 @@ function sheetXml(sh: SheetSpec) {
     ? `<pane${fr.col ? ` xSplit="${fr.col}"` : ''}${fr.row ? ` ySplit="${fr.row}"` : ''} topLeftCell="${col(fr.col || 0)}${(fr.row || 0) + 1}" activePane="${fr.row && fr.col ? 'bottomRight' : fr.row ? 'bottomLeft' : 'topRight'}" state="frozen"/>`
     : '';
   const rows = sh.rows
-    .map((r, i) => `<row r="${i + 1}">${(r || []).map((c, j) => cellXml(col(j) + (i + 1), c)).join('')}</row>`)
+    .map(
+      (r, i) =>
+        `<row r="${i + 1}"${sh.heights?.[i + 1] ? ` ht="${sh.heights[i + 1]}" customHeight="1"` : ''}>${(r || []).map((c, j) => cellXml(col(j) + (i + 1), c)).join('')}</row>`,
+    )
     .join('');
   const af =
     sh.filter && sh.rows.length > sh.filter.row
@@ -107,13 +122,31 @@ function sheetXml(sh: SheetSpec) {
 <cols>${widths.map((w, j) => `<col min="${j + 1}" max="${j + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rows}</sheetData>${af}${dv}<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToHeight="0" paperSize="9"/></worksheet>`;
 }
 
+/** J&J workpaper look: Aptos throughout (Tobin, Nov 2026), brand blue #2C388E for titles, headers and links */
+export const FONT = 'Aptos';
+const fnt = (o: { b?: boolean; i?: boolean; u?: boolean; sz?: number; color?: string }) =>
+  `<font>${o.b ? '<b/>' : ''}${o.i ? '<i/>' : ''}${o.u ? '<u/>' : ''}<sz val="${o.sz ?? 10}"/>${o.color ? `<color rgb="FF${o.color}"/>` : ''}<name val="${FONT}"/><family val="2"/></font>`;
+const FONTS = [
+  fnt({}), // 0 body
+  fnt({ b: true, sz: 15, color: '2C388E' }), // 1 title
+  fnt({ color: '737B8E' }), // 2 sub
+  fnt({ b: true, color: 'FFFFFF' }), // 3 header
+  fnt({ b: true }), // 4 bold
+  fnt({ b: true, color: '2C388E' }), // 5 brand bold
+  fnt({ i: true, sz: 9, color: '737B8E' }), // 6 note
+  fnt({ u: true, color: '2C388E' }), // 7 hyperlink
+  fnt({ b: true, sz: 12, color: 'FFFFFF' }), // 8 band
+  fnt({ sz: 10, color: 'DDE1F2' }), // 9 band sub
+  fnt({ b: true, sz: 13, color: '2C388E' }), // 10 kpi figure
+  fnt({ sz: 9, color: '4A5068' }), // 11 formula text (Consolas-like look not needed: plain Aptos, smaller)
+];
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="2"><numFmt numFmtId="164" formatCode="#,##,##0.00;[Red]-#,##,##0.00;&quot;-&quot;"/><numFmt numFmtId="165" formatCode="dd-mm-yyyy"/></numFmts>
-<fonts count="7"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="14"/><color rgb="FF2C388E"/><name val="Arial"/></font><font><sz val="10"/><color rgb="FF737B8E"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FF2C388E"/><name val="Arial"/></font><font><i/><sz val="9"/><color rgb="FF737B8E"/><name val="Arial"/></font></fonts>
+<fonts count="${FONTS.length}">${FONTS.join('')}</fonts>
 <fills count="7"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2C388E"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE3E6F5"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F5EE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFDEEEC"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF8E1"/></patternFill></fill></fills>
 <borders count="3"><border/><border><top style="thin"><color rgb="FF2C388E"/></top><bottom style="double"><color rgb="FF2C388E"/></bottom></border><border><bottom style="thin"><color rgb="FFD3D7E6"/></bottom></border></borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="16">
+<cellXfs count="21">
 <xf/>
 <xf fontId="1" applyFont="1"/>
 <xf fontId="2" applyFont="1"/>
@@ -130,7 +163,12 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleShe
 <xf fillId="5" applyFill="1"/>
 <xf fontId="5" applyFont="1"/>
 <xf fillId="6" borderId="2" applyFill="1" applyBorder="1"/>
-</cellXfs></styleSheet>`;
+<xf fontId="7" applyFont="1"/>
+<xf fontId="8" fillId="2" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>
+<xf fontId="9" fillId="2" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>
+<xf numFmtId="164" fontId="10" applyNumberFormat="1" applyFont="1"/>
+<xf fontId="11" applyFont="1"><alignment wrapText="1" vertical="top"/></xf>
+</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
 
 export async function writeBook(sheets: SheetSpec[], defined: { name: string; ref: string }[] = []): Promise<Uint8Array> {
   const z = new JSZip();

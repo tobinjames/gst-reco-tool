@@ -62,8 +62,8 @@ const HERO: Record<Tab, [string, string, string]> = {
   ],
   annual: [
     'Annual return <em>loader</em>',
-    'GSTR-1, 2B, 3B and the registers into the GSTR-9 / 9C workbook, and the finished workbook back into the GSTR-9 upload JSON.',
-    'GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Oct) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · or just your saved workbook (.xlsx): it brings back its files and settings',
+    'The GSTR-9 / 9C workbook from your saved Input Reco, Revenue reco and GST ledger flow workpapers, and the finished workbook back into the GSTR-9 upload JSON.',
+    "Recommended: your three saved workpapers (Input Reco, Revenue reco, GST ledger flow): they bring their files, settings, match codes and reasons · plus the portal GSTR-9 JSON, and next year's GSTR-1 / 2B (April–October) if they are not in them · or your saved annual workbook. Direct from GSTR-1, 3B, 2B and the registers also works, but is not recommended",
   ],
   revenue: [
     'Revenue <em>reconciliation</em>',
@@ -219,12 +219,36 @@ function covered(f: InFile): string[] {
   }
   return [f.period];
 }
+/** Annual return tab: which of the three workpapers are loaded (the recommended route) */
+function workpaperPanel(): string {
+  const wps = activeFiles().filter(f => f.saved && f.saved.tab !== 'annual');
+  const slot = (t: 'itc' | 'revenue' | 'flow', name: string, how: string) => {
+    const f = wps.find(x => x.saved!.tab === t);
+    return `<tr><th class="cvl">${name}</th><td class="cv ${f ? 'ok' : 'miss'} wide" style="text-align:left;padding-left:10px">${
+      f
+        ? `✓ ${esc(f.name)}${f.saved!.savedAt ? ` <span class="muted">(saved ${esc(f.saved!.savedAt)})</span>` : ''}`
+        : `✕ not loaded: ${how}`
+    }</td></tr>`;
+  };
+  const n = new Set(wps.map(f => f.saved!.tab)).size;
+  return `<div class="callout" style="margin:0 0 12px"><b>Recommended: build from your three workpapers</b>
+    <table class="cov" style="margin:8px 0">${slot('itc', 'Input Reco', 'finish the Input Reco tab and drop its saved workpaper here')}
+    ${slot('revenue', 'Revenue reco', 'finish the Revenue reco tab and drop its saved workpaper here')}
+    ${slot('flow', 'GST ledger flow', 'finish the GST ledger flow tab and drop its saved workpaper here')}</table>
+    <span class="muted">${
+      n === 3
+        ? 'All three are in: their source files, settings, match codes and reasons are loaded below, and the workbook gets a Workpapers sheet comparing their figures with the return.'
+        : n
+          ? 'The ones loaded bring their source files, settings and choices. Add the others for the full comparison on the Workpapers sheet.'
+          : 'Each one brings its source files, settings and your decisions, so nothing is redone here. Direct from GSTR-1, 3B, 2B and the registers (below) also works, but is not recommended: nothing has been reviewed invoice by invoice first.'
+    }</span></div>`;
+}
 function renderCoverage() {
   const el = $('coverage');
   const files = activeFiles(),
     oth = otherGstin();
   if (!files.length && !oth.length) {
-    el.innerHTML = '';
+    el.innerHTML = tab === 'annual' ? workpaperPanel() : '';
     return;
   }
   const othHtml = oth.length
@@ -296,7 +320,7 @@ function renderCoverage() {
   const p9 = files.some(f => f.kind === 'GSTR-9 (portal)');
   const wbk = files.some(f => f.kind === 'Workbook');
   const outside = files.filter(f => f.fy && ![fy, ny, py].includes(f.fy) && f.kind !== 'GSTR-9 (portal)');
-  el.innerHTML = `<table class="cov"><tr><th class="cvl">Return</th>${MON.map(m => `<th class="cvh">${m}</th>`).join('')}<th class="cvh">Loaded</th></tr>${body}
+  el.innerHTML = `${workpaperPanel()}<table class="cov"><tr><th class="cvl">Return</th>${MON.map(m => `<th class="cvh">${m}</th>`).join('')}<th class="cvh">Loaded</th></tr>${body}
     <tr><th class="cvl">GSTR-9<span>portal pre-filled JSON</span></th><td colspan="12" class="cv ${p9 ? 'ok' : 'miss'} wide">${p9 ? '✓ loaded' : '✕ not loaded — download from the GSTR-9 tile (Prepare Offline › Generate JSON file to download)'}</td><td class="cvc ${p9 ? 'full' : 'part'}">${p9 ? 1 : 0}/1</td></tr></table>
     <div class="gaps">${gaps.length ? `<span class="warn-error">Missing:</span> ${gaps.join(' · ')}` : '<span class="ok-text">All required months loaded.</span>'}
       ${files.some(f => f.kind === 'GSTR-1' && f.json?.filing_typ === 'Q') ? '<br/><span class="muted">Quarterly GSTR-1 counts for all three months of its quarter. For quarterly (QRMP) 3B filers, only quarter-end months are expected.</span>' : ''}
@@ -363,8 +387,8 @@ async function addFilesNow(all: File[]) {
   }
   // the tabs work everything out again from the files: once, after the last file
   await step('Matching and working out the reconciliation…', undefined, `${files.length} file(s) loaded`);
-  // a dropped workpaper opens its own tab
-  if (wpTab && wpTab !== tab) setTab(wpTab);
+  // a dropped workpaper opens its own tab, except on the Annual return tab, which is built from the other tabs' workpapers
+  if (wpTab && wpTab !== tab && tab !== 'annual') setTab(wpTab);
   else render();
   const msg = [
     dup ? `${dup} duplicate file(s) skipped` : '',
@@ -379,6 +403,12 @@ async function restoreWorkpaper(wp: InFile) {
   const st = wp.saved!;
   await step('Restoring the saved workpaper…', undefined, wp.name);
   restored = applyState(wp.name, st);
+  // on the Annual return tab, the Input Reco workpaper's matching settings are the ones its match codes were made with
+  if (tab === 'annual' && st.tab === 'itc' && st.keys['jjset:itc'] && !files.some(f => f.saved?.tab === 'annual')) {
+    restored.undo['jjset:annual'] = store.get('jjset:annual');
+    store.set('jjset:annual', st.keys['jjset:itc']);
+    restored.lines.push('Matching settings of the Input Reco workpaper, used for the purchase reconciliation here');
+  }
   if (st.legal && !$('legal').dataset.touched && !String($('legal').value || '').trim()) $('legal').value = st.legal;
   let n = 0;
   try {

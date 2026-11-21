@@ -2,6 +2,8 @@
 // "Your reason", "B2CS month" and "Remark" are yours to fill (drop-down lists) and are read back when the saved workbook is
 // dropped into the Loader again. The statements, month-wise and B2C sheets are SUMIFS formulas over Rev_Items,
 // G1_Rows and 3B_Rows (cached values written too; Excel recalculates on open).
+import { SheetInfo, Section, heading, how, indexSheet, instructionsSheet } from '../wpfront';
+import { LOADER_VERSION } from '../version';
 import { C, SheetSpec, col, serial, writeBook } from '../xlsxbook';
 import {
   Item,
@@ -96,16 +98,7 @@ function cacheSums(rows: C[][], total: number, first: number, last: number) {
 const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
 
 export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint8Array> {
-  const title = (t: string): C[][] => [
-    [{ v: t, s: 'title' }],
-    [
-      {
-        v: `${meta.legalName || 'Client'} · GSTIN ${meta.gstin || '-'} · FY ${meta.fy} · Prepared by James & James LLP`,
-        s: 'sub',
-      },
-    ],
-    [],
-  ];
+  const title = (t: string): C[][] => heading(t, meta);
   const hdr = (cols: readonly string[]): C[] => cols.map(c => ({ v: c, s: 'hdr' }));
   const months = monthsOf(meta.fy);
   const mLabels = months.map(ymLabel);
@@ -556,32 +549,39 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
 
   // ---- Dashboard
   const dash: C[][] = [
-    ...title('Revenue reconciliation: dashboard'),
-    hdr(['', 'Taxable value', 'Tax']),
+    ...title('Summary: turnover as per books, GSTR-1 and GSTR-3B'),
+    hdr(['', 'Taxable value', 'Tax', 'How it is worked out']),
     [
       'Turnover as per books',
       { f: `Books_to_GSTR1!B${rowTurn}`, v: N(r.books.turnover[0]) },
       { f: `Books_to_GSTR1!C${rowTurn}`, v: N(r.books.turnover[1]) },
+      how(
+        `Books_to_GSTR1 row ${rowTurn}: books taxable value and tax of every Rev_Items entry, less entries marked "not a supply".`,
+      ),
     ],
     [
       'Turnover as per GSTR-1',
       { f: `Books_to_GSTR1!B${rowG1}`, v: N(r.g1Turnover[0]) },
       { f: `Books_to_GSTR1!C${rowG1}`, v: N(r.g1Turnover[1]) },
+      how(`Books_to_GSTR1 row ${rowG1}: sum of the GSTR-1 columns of Rev_Items (invoices, notes, B2CS, Table 8).`),
     ],
     [
       'Turnover as per GSTR-3B',
       { f: `GSTR1_to_3B!B${rowTb}`, v: N(r.tbTotal[0]) },
       { f: `GSTR1_to_3B!C${rowTb}`, v: N(r.tbTotal[1]) },
+      how(`GSTR1_to_3B row ${rowTb}: Table 3.1 (a), (b), (c), (e) and 3.1.1(ii) of the 3B PDFs, months in Month_3B.`),
     ],
     [
       { v: 'GSTR-1 - books', s: 'bold' },
       { f: 'B6-B5', s: 'numB', v: N(r.g1Turnover[0] - r.books.turnover[0]) },
       { f: 'C6-C5', s: 'numB', v: N(r.g1Turnover[1] - r.books.turnover[1]) },
+      how('Explained line by line in Books_to_GSTR1.'),
     ],
     [
       { v: '3B - GSTR-1', s: 'bold' },
       { f: 'B7-B6', s: 'numB', v: N(r.tbTotal[0] - r.g1Turnover[0]) },
       { f: 'C7-C6', s: 'numB', v: N(r.tbTotal[1] - r.g1Turnover[1]) },
+      how('Explained table by table in GSTR1_to_3B.'),
     ],
     [],
     [
@@ -598,6 +598,7 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
           l.label.replace(/^(Add|Less): /, ''),
           i >= 0 ? { f: `Books_to_GSTR1!B${i + 1}`, v: N(l.amt[0]) } : N(l.amt[0]),
           i >= 0 ? { f: `Books_to_GSTR1!C${i + 1}`, v: N(l.amt[1]) } : N(l.amt[1]),
+          how(i >= 0 ? `Books_to_GSTR1 row ${i + 1}` : ''),
         ] as C[];
       }),
     [],
@@ -605,11 +606,13 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
       { v: 'Unexplained (books to GSTR-1)', s: 'bold' },
       { f: `Books_to_GSTR1!B${lineLast + 1}`, v: N(val('unx')[0]), s: 'numB' },
       { f: `Books_to_GSTR1!C${lineLast + 1}`, v: N(val('unx')[1]), s: 'numB' },
+      how('Should be nil'),
     ],
     [
       { v: 'Unexplained (GSTR-1 to 3B)', s: 'bold' },
       { f: `GSTR1_to_3B!B${rowTb - 1}`, v: N(v2('unx')[0]), s: 'numB' },
       { f: `GSTR1_to_3B!C${rowTb - 1}`, v: N(v2('unx')[1]), s: 'numB' },
+      how('Should be nil'),
     ],
   ];
 
@@ -659,75 +662,132 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
       x[19] ?? '',
     ]);
 
-  // ---- Read Me
-  const readme: C[][] = [
-    [{ v: 'Revenue reconciliation: GSTR-1 vs GSTR-3B vs books', s: 'title' }],
-    [{ v: 'Prepared by James & James LLP', s: 'sub' }],
-    [],
-    ['Client', meta.legalName],
-    ['GSTIN', meta.gstin],
-    ['Financial year', meta.fy],
-    ['Books source', meta.source],
-    ['Built', meta.builtAt],
-    ...(meta.settings ?? []).map(t => ['Matching settings', t] as C[]),
-    [],
-    [
-      { v: 'How to read it', s: 'sec' },
-      { v: '', s: 'sec' },
-    ],
-    [
-      'Books_to_GSTR1',
-      'Starts from revenue as per books, lists each reason for the difference, ends at turnover as per GSTR-1. Unexplained is last.',
-    ],
-    ['GSTR1_to_3B', 'Starts from turnover as per GSTR-1, ends at GSTR-3B Table 3.1, table by table for the year.'],
-    ['Month_wise / Month_3B', 'The same by month. Shifts from one month to another of the same year show only here.'],
-    ['B2C_Month', 'Books B2C entries ticked for each month against GSTR-1 B2CS.'],
-    [
-      'Rev_Items',
-      'Every document, B2CS and Table 8 row with both sides. Yellow columns are yours: Your reason, B2CS month, Remark.',
-    ],
-    ['G1_Rows / 3B_Rows / Books_Lines', 'The data read from the files, untouched.'],
-    ...(meta.customers?.length
-      ? [['Customer_Map', 'Books customers without a GSTIN, the GSTIN given to them and the basis of each mapping.'] as C[]]
-      : []),
-    [],
-    [
-      { v: 'Reasons', s: 'sec' },
-      { v: '', s: 'sec' },
-    ],
-    ...REASONS.filter(x => x.code !== 'MATCHED').map(x => [x.label, x.action] as C[]),
-    [],
-    [
-      { v: 'To carry your reasons over', s: 'sec' },
-      { v: '', s: 'sec' },
-    ],
-    ['1', 'Fill Your reason / B2CS month / Remark in Rev_Items and save the workbook.'],
-    ['2', 'Open the Loader, Revenue reco tab, and drop the saved workbook with the same GSTR-1, 3B and books files.'],
-    ['3', 'Your entries are read back (by Id), shown on screen and written to the next workbook.'],
-    [],
-    [
-      { v: 'Files used', s: 'sec' },
-      { v: '', s: 'sec' },
-    ],
-    ...meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as C[]),
-    [],
-    [
-      { v: 'Where to get the files', s: 'sec' },
-      { v: '', s: 'sec' },
-    ],
-    ...REV_GUIDE.map(
-      g =>
+  // ---- Instructions (one sheet) and Index
+  const front = {
+    title: 'Revenue reconciliation: books vs GSTR-1 vs GSTR-3B',
+    legalName: meta.legalName,
+    gstin: meta.gstin,
+    fy: meta.fy,
+    builtAt: meta.builtAt,
+    version: LOADER_VERSION,
+    extra: [['Books source', meta.source]] as [string, string][],
+  };
+  const sections: Section[] = [
+    {
+      heading: 'What this workpaper does',
+      lines: [
         [
-          `${g.title} (${g.source === 'portal' ? 'GST portal' : g.source === 'tally' ? 'Tally' : g.source === 'zoho' ? 'Zoho Books' : 'Other'})`,
-          g.steps.join(' ') + (g.note ? ' ' + g.note : ''),
-        ] as C[],
-    ),
+          'Purpose',
+          'Reconciles turnover as per books with GSTR-1, and GSTR-1 with GSTR-3B, for the year, giving the reason for every difference.',
+        ],
+        [
+          'Start here',
+          'Summary, then Books_to_GSTR1 and GSTR1_to_3B (bank-reco style statements: start figure, reasons, end figure).',
+        ],
+      ],
+    },
+    {
+      heading: 'How the figures are worked out',
+      lines: [
+        [
+          'Rev_Items',
+          'One row per invoice, credit note, B2CS month / rate / place and Table 8 row, with the books side and the GSTR-1 side. "Reason used" = your reason if you gave one, else the tool\'s reason.',
+        ],
+        [
+          'Books_to_GSTR1',
+          'Each reason line = SUMIFS of the GSTR-1 columns minus SUMIFS of the books columns of Rev_Items with that "Reason used". So books + reasons = GSTR-1; "Difference not explained" is what is left and should be nil.',
+        ],
+        [
+          'GSTR1_to_3B',
+          'Links to the totals row of Month_3B, which compares GSTR-1 and 3B month by month and table by table (SUMIFS over G1_Rows and 3B_Rows).',
+        ],
+        [
+          'Month_wise / Month_3B',
+          'The same by month. Books are by invoice date, GSTR-1 / 3B by return period: shifts between months of the same year cancel out over the year and show only here.',
+        ],
+        ['B2C_Month', 'Books B2C entries ticked for each month against GSTR-1 B2CS.'],
+        ['G1_Rows / 3B_Rows / Books_Lines', 'The data read from the files, untouched.'],
+      ],
+    },
+    {
+      heading: 'Reasons (what to do about each)',
+      lines: REASONS.filter(x => x.code !== 'MATCHED').map(x => [x.label, x.action] as [string, string]),
+    },
+    {
+      heading: 'Working with the tool',
+      lines: [
+        [
+          'Your reasons in Excel',
+          'Fill the yellow columns of Rev_Items (Your reason, B2CS month, Remark) and save. The statements move with them.',
+        ],
+        [
+          'Next time',
+          'Drop this saved workpaper into the Loader (Revenue reco tab): it brings back its files, settings and reasons; your yellow columns are read back by Id. A newer sales register or GL dump dropped with it replaces the saved copy; GSTR-1 and 3B stay as filed.',
+        ],
+        [
+          'Annual return',
+          'This workpaper, with the Input Reco and GST ledger flow workpapers, is what the Annual return tab builds GSTR-9 / 9C from.',
+        ],
+      ],
+    },
+    { heading: 'Settings used', lines: (meta.settings ?? []).map(t => ['Matching settings', t] as [string, string]) },
+    {
+      heading: 'Files used',
+      lines: meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as [string, string]),
+    },
+    {
+      heading: 'Where to get the files',
+      lines: REV_GUIDE.map(
+        g =>
+          [
+            `${g.title} (${g.source === 'portal' ? 'GST portal' : g.source === 'tally' ? 'Tally' : g.source === 'zoho' ? 'Zoho Books' : 'Other'})`,
+            g.steps.join(' ') + (g.note ? ' ' + g.note : ''),
+          ] as [string, string],
+      ),
+    },
   ];
-  const readmeRows = readme.map(r => r.map((c, j) => (j === 1 && typeof c === 'string' ? { v: c, s: 'wrap' as const } : c)));
-
+  const info: SheetInfo[] = [
+    {
+      name: 'Summary',
+      role: 'Summary',
+      about: 'Turnover as per books, GSTR-1 and GSTR-3B, the differences and the main reasons (links to the statements).',
+    },
+    {
+      name: 'Books_to_GSTR1',
+      role: 'Working',
+      about: 'Revenue as per books, each reason for the difference, turnover as per GSTR-1 (SUMIFS over Rev_Items).',
+    },
+    { name: 'GSTR1_to_3B', role: 'Working', about: 'Turnover as per GSTR-1 to GSTR-3B Table 3.1, table by table for the year.' },
+    { name: 'Month_wise', role: 'Working', about: 'Books, GSTR-1 and GSTR-3B by month.' },
+    { name: 'B2C_Month', role: 'Working', about: 'Books B2C entries for each month against GSTR-1 B2CS.' },
+    { name: 'Month_3B', role: 'Working', about: 'GSTR-1 against GSTR-3B by table and month.' },
+    {
+      name: ITEMS_SHEET,
+      role: 'Your input',
+      about: 'Every document, B2CS and Table 8 row with both sides; yellow columns are yours (reason, B2CS month, remark).',
+    },
+    ...(meta.customers?.length
+      ? [
+          {
+            name: 'Customer_Map',
+            role: 'Working',
+            about: 'Books customers without a GSTIN, the GSTIN given and the basis.',
+          } as SheetInfo,
+        ]
+      : []),
+    { name: 'G1_Rows', role: 'Source data', about: 'GSTR-1 rows of the year, from the JSON files.' },
+    { name: '3B_Rows', role: 'Source data', about: 'GSTR-3B Table 3.1 rows, from the PDFs.' },
+    { name: 'Books_Lines', role: 'Source data', about: `Books lines used (${meta.source}).` },
+    ...(meta.ledgers?.length
+      ? [{ name: 'Ledgers', role: 'Working', about: 'Revenue ledgers in the GL dump and the class you gave each.' } as SheetInfo]
+      : []),
+    { name: 'Audit', role: 'Your input', about: 'Your decisions: reasons, B2CS months, ledger classes.' },
+    { name: 'Lists', role: 'Reference', about: 'The drop-down lists used in Rev_Items.' },
+  ];
   const sheets: SheetSpec[] = [
-    { name: 'Read Me', rows: readmeRows, widths: [34, 110], tab: '2C388E' },
-    { name: 'Dashboard', rows: dash, widths: [52, 18, 16] },
+    indexSheet(front, info),
+    instructionsSheet(front, sections),
+    { name: 'Summary', rows: dash, widths: [52, 18, 16, 90], freeze: { row: 4 }, tab: '2C388E' },
     { name: 'Books_to_GSTR1', rows: s1, widths: [60, 18, 16, 9, 80], freeze: { row: 4 } },
     { name: 'GSTR1_to_3B', rows: s2, widths: [70, 18, 16, 9, 70], freeze: { row: 4 } },
     { name: 'Month_wise', rows: mw, widths: [10, ...Array(14).fill(15)], freeze: { row: 4, col: 1 } },
