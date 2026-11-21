@@ -1,6 +1,7 @@
 // Revenue reco tab: books source (sales register, else revenue ledgers from a GL dump), dashboard, the two statements,
 // every entry with filters and reasons (one by one or in bulk), and the workbook.
 import type { InFile } from '../build';
+import { addStateSheets, packState } from '../state';
 import { withProgress } from '../progress';
 import { processGstr1 } from '../gstr1';
 import type { MatchOptions } from '../recon';
@@ -105,6 +106,10 @@ export class RevenueTab {
     $('rvBuild').onclick = () => this.build();
   }
 
+  /** read the browser settings again (a workpaper was restored, or the restore undone) */
+  reload() {
+    this.key = '';
+  }
   private load(c: RevCtx) {
     const k = `${c.gstin || '-'}:${c.fy}`;
     if (k === this.key) return;
@@ -894,7 +899,8 @@ export class RevenueTab {
     if (!r) return;
     $('rvStatus').textContent = 'Building…';
     try {
-      const bytes = await revenueWorkbook(r, {
+      this.save();
+      const book = await revenueWorkbook(r, {
         gstin: c.gstin,
         legalName: c.legal,
         fy: c.fy,
@@ -919,6 +925,7 @@ export class RevenueTab {
             return { name: x.name, gstin: m.gstin, basis: CUST_HOW[m.how], detail: m.detail };
           }),
       });
+      const bytes = await addStateSheets(book, packState('revenue', c.gstin, c.fy, nowTxt()));
       const name = `Revenue_Reco_${(c.gstin || 'client').trim()}_${c.fy}.xlsx`;
       const url = URL.createObjectURL(
         new Blob([bytes as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),

@@ -1,4 +1,5 @@
 // Orchestrates: classify input files → parse → write workbook
+import { SavedState, readState } from './state';
 import JSZip from 'jszip';
 import { step } from './progress';
 import { G1File, isGstr1, processGstr1 } from './gstr1';
@@ -37,6 +38,7 @@ export type Kind =
   | 'Portal ledger'
   | 'Books ledger'
   | 'Revenue workbook'
+  | 'Flow workbook'
   | 'Customer list'
   | 'Unknown';
 export interface InFile {
@@ -54,6 +56,12 @@ export interface InFile {
   books?: BookFile;
   /** customer list (name + GSTIN), for the revenue reco */
   customers?: { name: string; gstin: string }[];
+  /** the file as dropped (kept so a workbook can carry its source files; not for workbooks) */
+  raw?: Uint8Array;
+  /** a workbook written by the tool: the settings, choices and source files saved in it */
+  saved?: SavedState;
+  /** set on files that came out of a saved workpaper: its file name */
+  fromWp?: string;
 }
 
 /** expand zips, parse JSON, detect kind. pdfs are parsed by the caller (pdf.js differs in browser / node) */
@@ -64,6 +72,9 @@ export async function sha1(bytes: Uint8Array) {
     .join('');
 }
 
+/** workbooks written by the tool (never saved inside another workpaper) */
+export const WORKBOOK_KINDS: Kind[] = ['Workbook', 'Revenue workbook', 'Flow workbook'];
+
 export async function classify(
   name: string,
   bytes: Uint8Array,
@@ -73,6 +84,7 @@ export async function classify(
   if (!name.toLowerCase().endsWith('.zip')) {
     const h = await sha1(bytes);
     out.forEach(f => (f.hash = h));
+    for (const f of out) if (!WORKBOOK_KINDS.includes(f.kind) && f.kind !== 'Unknown') f.raw = bytes;
   }
   return out;
 }
@@ -112,11 +124,19 @@ async function classifyInner(
     if (lower.endsWith('.xlsx')) {
       try {
         const rd = await Reader.open(bytes);
-        if (rd.has('RAW_GSTR1') && rd.has('Basic')) return [{ name, kind: 'Workbook', bytes, note: 'Annual return workbook' }];
+        const saved = (await readState(rd)) ?? undefined;
+        const wbk = (kind: Kind, note: string): InFile[] => [
+          { name, kind, bytes, note, saved, gstin: saved?.gstin || undefined, fy: saved?.fy || undefined },
+        ];
+        if (rd.has('RAW_GSTR1') && rd.has('Basic')) return wbk('Workbook', 'Annual return workbook');
         if (rd.has('Rev_Items') && rd.has('Books_to_GSTR1'))
-          return [{ name, kind: 'Revenue workbook', bytes, note: 'Revenue reconciliation workbook: your reasons are read back' }];
-        if (rd.has('_ITC') && rd.has('Recon_Purchases'))
-          return [{ name, kind: 'Workbook', bytes, note: 'ITC reconciliation workbook' }];
+          return wbk('Revenue workbook', 'Revenue reconciliation workbook: your reasons are read back');
+        if (rd.has('_ITC') && rd.has('Recon_Purchases')) return wbk('Workbook', 'ITC reconciliation workbook');
+        if (rd.has('Year_Compare') && rd.has('Flow_Books'))
+          return wbk(
+            'Flow workbook',
+            saved ? 'GST ledger flow workbook' : 'GST ledger flow workbook from an older version: nothing to read back',
+          );
       } catch {
         return [{ name, kind: 'Unknown', note: 'Could not open the Excel file' }];
       }

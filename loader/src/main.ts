@@ -2,7 +2,7 @@ import * as pdfjs from 'pdfjs-dist/build/pdf.mjs';
 import * as pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs';
 import templateUrl from '../template/GST_Annual_Return_Workbook.xlsx?inline';
 import itcTemplateUrl from '../template/ITC_Recon_Template.xlsx?inline';
-import { InFile, buildItc, buildWorkbook, classify } from './build';
+import { InFile, WORKBOOK_KINDS, buildItc, buildWorkbook, classify } from './build';
 import { linesFromItems, parse3b } from './gstr3b';
 import { esc, fyShift, inr, store } from './util';
 import { step, withProgress } from './progress';
@@ -11,7 +11,9 @@ import { Review } from './review';
 import { FlowTab } from './flow/ui';
 import { RevenueTab } from './revenue/ui';
 import { SettingsCard } from './settings';
-import { applyAliases, supplierSuggestions, suppliersFrom2B } from './suppliers';
+import { Restored, addStateSheets, applyState, packState, readSavedFiles, setStateProvider, undoState } from './state';
+import { Reader } from './xlsx';
+import { applyAliases, nameKey, supplierSuggestions, suppliersFrom2B } from './suppliers';
 import {
   FieldDef,
   Mapping,
@@ -56,22 +58,22 @@ const HERO: Record<Tab, [string, string, string]> = {
   itc: [
     'Input <em>reconciliation</em>',
     'GSTR-2B against the purchase register, month by month: matched, books only, 2B only and value differences, with your match codes and remarks kept.',
-    'GSTR-2B JSON(s) for the months you are reconciling · purchase register (.xlsx / .csv, any format) · optionally the previous ITC reconciliation workbook to keep match codes and remarks',
+    'GSTR-2B JSON(s) for the months you are reconciling · purchase register (.xlsx / .csv, any format) · or just the saved ITC reconciliation workbook: it brings back its files, settings, match codes and remarks',
   ],
   annual: [
     'Annual return <em>loader</em>',
     'GSTR-1, 2B, 3B and the registers into the GSTR-9 / 9C workbook, and the finished workbook back into the GSTR-9 upload JSON.',
-    'GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Oct) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it',
+    'GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Oct) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · or just your saved workbook (.xlsx): it brings back its files and settings',
   ],
   revenue: [
     'Revenue <em>reconciliation</em>',
     'Books against GSTR-1 against GSTR-3B for the year: a dashboard, a statement from books to GSTR-1 and from GSTR-1 to 3B, and the reason for every difference.',
-    'GSTR-1 JSON / ZIP (every month of the year, and April–October of the next year) · GSTR-3B PDFs · sales register (.xlsx / .csv, any format), or a day book / GL dump if there is no proper sales register · optionally your saved revenue workbook to keep your reasons',
+    'GSTR-1 JSON / ZIP (every month of the year, and April–October of the next year) · GSTR-3B PDFs · sales register (.xlsx / .csv, any format), or a day book / GL dump if there is no proper sales register · or just your saved revenue workbook: it brings back its files, settings and reasons',
   ],
   flow: [
     'GST <em>ledger flow</em>',
     'Opening, output tax, input tax, payments, refunds, reversals and closing, as per books and as per the portal, with the reasons for each difference worked out from the entries.',
-    'Portal Electronic Credit Ledger, Cash Ledger and Liability Register (CSV / Excel) · GST ledgers from Tally, Zoho or any software, one by one or as a full GL dump (.xlsx / .csv) · optionally GSTR-3B PDFs for the 3B checks',
+    'Portal Electronic Credit Ledger, Cash Ledger and Liability Register (CSV / Excel) · GST ledgers from Tally, Zoho or any software, one by one or as a full GL dump (.xlsx / .csv) · optionally GSTR-3B PDFs for the 3B checks · or just your saved flow workbook: it brings back its files and choices',
   ],
 };
 /** the mode the reconciliation code works in (the flow tab has no matching review) */
@@ -323,31 +325,146 @@ async function addFiles(list: FileList | File[]) {
 async function addFilesNow(all: File[]) {
   $('status').textContent = 'Reading files…';
   let dup = 0;
+  const got: InFile[] = [];
   for (const [i, f] of all.entries()) {
     await step(all.length > 1 ? `Reading file ${i + 1} of ${all.length}` : 'Reading the file', i / all.length, f.name);
     try {
-      for (const x of await classify(f.name, new Uint8Array(await f.arrayBuffer()), parsePdf)) {
-        // file names don't matter (the portal reuses names); identical content is skipped
-        if (x.hash && files.some(y => y.hash === x.hash)) {
-          dup++;
-          continue;
-        }
-        if (files.some(y => y.name === x.name)) x.name = `${x.name} (${x.kind}${x.period ? ' ' + fmtP(x.period) : ''})`;
-        files.push(x);
-      }
+      got.push(...(await classify(f.name, new Uint8Array(await f.arrayBuffer()), parsePdf)));
     } catch (e: any) {
-      files.push({ name: f.name, kind: 'Unknown', note: e.message });
+      got.push({ name: f.name, kind: 'Unknown', note: e.message });
+    }
+  }
+  const add = (x: InFile) => {
+    // file names don't matter (the portal reuses names); identical content is skipped
+    if (x.hash && files.some(y => y.hash === x.hash)) {
+      dup++;
+      return false;
+    }
+    if (files.some(y => y.name === x.name)) x.name = `${x.name} (${x.kind}${x.period ? ' ' + fmtP(x.period) : ''})`;
+    files.push(x);
+    return true;
+  };
+  // saved workpapers first: their settings and source files, then the files dropped with them (a newer register replaces
+  // the one saved in the workpaper)
+  const replaced: string[] = [];
+  let wpTab: Tab | null = null;
+  for (const x of got.filter(x => x.saved))
+    if (add(x)) {
+      await restoreWorkpaper(x);
+      wpTab = x.saved!.tab;
+    }
+  for (const x of got.filter(x => !x.saved)) {
+    if (!add(x)) continue;
+    for (const old of await replacedBy(x)) {
+      files.splice(files.indexOf(old), 1);
+      regState.delete(old);
+      replaced.push(`${old.name} → ${x.name}`);
     }
   }
   // the tabs work everything out again from the files: once, after the last file
   await step('Matching and working out the reconciliation…', undefined, `${files.length} file(s) loaded`);
-  render();
-  if (dup) {
-    $('status').textContent = `${dup} duplicate file(s) skipped`;
-    return;
-  }
-  $('status').textContent = '';
+  // a dropped workpaper opens its own tab
+  if (wpTab && wpTab !== tab) setTab(wpTab);
+  else render();
+  const msg = [
+    dup ? `${dup} duplicate file(s) skipped` : '',
+    replaced.length ? `Replaced the workpaper's copy: ${replaced.join(', ')}` : '',
+  ].filter(Boolean);
+  $('status').textContent = msg.join(' · ');
 }
+
+// ---------- saved workpapers: settings, choices and source files carried in the workbook (src/state.ts)
+let restored: Restored | null = null;
+async function restoreWorkpaper(wp: InFile) {
+  const st = wp.saved!;
+  await step('Restoring the saved workpaper…', undefined, wp.name);
+  restored = applyState(wp.name, st);
+  if (st.legal && !$('legal').dataset.touched && !String($('legal').value || '').trim()) $('legal').value = st.legal;
+  let n = 0;
+  try {
+    const saved = await readSavedFiles(await Reader.open(wp.bytes!), st);
+    for (const sf of saved)
+      for (const y of await classify(sf.name, sf.bytes, parsePdf)) {
+        y.fromWp = wp.name;
+        y.note = `${y.note ? y.note + ' · ' : ''}from the workpaper`;
+        if (files.some(z => z.hash && z.hash === y.hash)) continue;
+        if (files.some(z => z.name === y.name)) y.name = `${y.name} (${y.kind}${y.period ? ' ' + fmtP(y.period) : ''})`;
+        files.push(y);
+        n++;
+      }
+  } catch (e: any) {
+    restored.lines.push(`The source files could not be read back: ${e.message}`);
+  }
+  restored.nFiles = n;
+  // registers already on screen pick up the restored mappings
+  for (const rs of regState.values()) remap(rs);
+  settings.reload();
+  flow.reload();
+  revenue.reload();
+}
+/** a books file the user drops replaces the workpaper's copy of the same thing; returns and portal ledgers never change */
+async function replacedBy(x: InFile): Promise<InFile[]> {
+  if (!['Register', 'Books ledger', 'Customer list'].includes(x.kind)) return [];
+  const olds = files.filter(f => f !== x && f.fromWp && f.kind === x.kind);
+  if (!olds.length) return [];
+  if (x.kind === 'Customer list') return olds;
+  if (x.kind === 'Books ledger') {
+    const id = (f: InFile) => (f.books!.format === 'ledger' ? `single:${f.books!.ledger}` : f.books!.format);
+    return olds.filter(f => f.books && x.books && id(f) === id(x));
+  }
+  const regKind = async (f: InFile) => {
+    try {
+      return pickRegister(f.name, await readTable(f.name, f.bytes!)).kind;
+    } catch {
+      return '';
+    }
+  };
+  const k = await regKind(x);
+  const out: InFile[] = [];
+  for (const f of olds) if ((await regKind(f)) === k) out.push(f);
+  return out;
+}
+const TAB_NAME: Record<Tab, string> = {
+  itc: 'Input Reco',
+  annual: 'Annual return',
+  flow: 'GST ledger flow',
+  revenue: 'Revenue reco',
+};
+/** shown at the top of the Matching settings step after a workpaper was dropped */
+function restoredHtml(): string {
+  const r = restored;
+  if (!r || !files.some(f => f.name === r.from || f.fromWp === r.from)) return '';
+  const fromWp = files.filter(f => f.fromWp === r.from);
+  const byKind: Record<string, number> = {};
+  for (const f of fromWp) byKind[f.kind] = (byKind[f.kind] || 0) + 1;
+  const lines = [
+    ...r.lines.map(l => (l === 'Matching settings' ? `Matching settings of the ${TAB_NAME[r.state.tab as Tab]} tab` : l)),
+    fromWp.length
+      ? `${fromWp.length} source file(s): ${Object.entries(byKind)
+          .map(([k, v]) => `${v} ${k}`)
+          .join(', ')}`
+      : '',
+  ].filter(Boolean);
+  const books = fromWp.some(f => ['Register', 'Books ledger', 'Customer list'].includes(f.kind));
+  return `<div class="callout" style="margin:0 0 12px"><b>Restored from ${esc(r.from)}</b>${r.state.savedAt ? ` <span class="muted">(saved ${esc(r.state.savedAt)})</span>` : ''}
+    <ul style="margin:6px 0">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
+    <span class="muted">Change anything below as usual.${books ? " To use a newer sales / purchase register or GL dump, drop it here: it replaces the workpaper's copy. Returns and portal ledgers stay as filed." : ''}${r.state.tab !== tab ? ` This workpaper is from the ${TAB_NAME[r.state.tab as Tab]} tab.` : ''}</span>
+    ${Object.keys(r.undo).length ? '<div style="margin-top:8px"><button class="small ghost" data-wpundo>Keep my earlier settings instead</button></div>' : ''}</div>`;
+}
+function undoRestore() {
+  if (!restored) return;
+  undoState(restored);
+  restored.undo = {};
+  restored.lines = [
+    "Your earlier settings are back (the source files from the workpaper are still loaded; remove any you don't want).",
+  ];
+  for (const rs of regState.values()) remap(rs);
+  settings.reload();
+  flow.reload();
+  revenue.reload();
+  render();
+}
+
 const drop = $('drop');
 drop.onclick = () => $('pick').click();
 $('pick').onchange = (e: any) => {
@@ -384,6 +501,7 @@ const buildNow = async () => {
       fy,
       { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), ...registerRows(fy), ...review.extra() },
     );
+    res.bytes = await addStateSheets(res.bytes, packState('annual', clientGstin(), fy, nowTxt()));
     const name = `GSTR9_${($('gstin').value || 'client').trim()}_${fy}.xlsx`;
     const url = URL.createObjectURL(
       new Blob([res.bytes as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
@@ -518,15 +636,19 @@ const sigOf = (st: RegState) =>
     )
     .join('|');
 
+/** the register's defaults (ITC type, status, rows without GSTIN...) are remembered with its mapping; not the claim year */
+const dKeyOf = (st: RegState) => sigOf(st).replace(/^jjmap:/, 'jjmapd:');
 async function initReg(f: InFile) {
   const sheets = await readTable(f.name, f.bytes!);
   const { sheet, header, kind } = pickRegister(f.name, sheets);
   const st: RegState = { sheets, sheet, header, kind, map: {}, d: {} };
-  st.map = store.get(sigOf(st)) || guessMappingFull(sheets[sheet].rows, header, fieldsOf(kind));
+  remap(st);
   regState.set(f, st);
 }
 function remap(st: RegState) {
   st.map = store.get(sigOf(st)) || guessMappingFull(st.sheets[st.sheet].rows, st.header, fieldsOf(st.kind));
+  st.d = { ...(store.get(dKeyOf(st)) || {}), claimFy: st.d.claimFy };
+  if (!st.d.claimFy) delete st.d.claimFy;
 }
 const defaults = (st: RegState) => ({
   noGstinZeroTax: st.d.noGstinZeroTax || 'EXEMPT',
@@ -558,7 +680,12 @@ function renderRegisters() {
     if (!st) {
       div.innerHTML = `<h3>${esc(f.name)}</h3><span class="muted">Reading…</span>`;
       initReg(f)
-        .then(renderRegisters)
+        .then(() => {
+          renderRegisters();
+          // the other tabs read the register too, once its columns are known
+          flow.refresh();
+          revenue.refresh();
+        })
         .catch(e => {
           f.kind = 'Unknown';
           f.note = e.message;
@@ -738,6 +865,8 @@ function renderRegisters() {
       (el: any) =>
         (el.onchange = () => {
           st.d[el.dataset.d] = el.value;
+          const { claimFy: _c, ...keep } = st.d;
+          store.set(dKeyOf(st), keep);
           renderRegisters();
         }),
     );
@@ -873,12 +1002,22 @@ function renderSuppliers() {
 
 // ---------- review matches (step 4): runs the reconciliation in the page; settings and manual decisions go into the build
 // ---------- matching settings (step before any matching, one set per tab)
-const settings = new SettingsCard($('settings'), t => {
-  if (t !== tab) return;
-  if (t === 'flow') flow.refresh();
-  else if (t === 'revenue') revenue.refresh();
-  else renderSuppliers(); // refreshes the review too
-});
+const settings = new SettingsCard(
+  $('settings'),
+  t => {
+    if (t !== tab) return;
+    if (t === 'flow') flow.refresh();
+    else if (t === 'revenue') revenue.refresh();
+    else renderSuppliers(); // refreshes the review too
+  },
+  box => {
+    const h = restoredHtml();
+    if (!h) return;
+    box.insertAdjacentHTML('afterbegin', h);
+    const u = box.querySelector('[data-wpundo]') as any;
+    if (u) u.onclick = undoRestore;
+  },
+);
 const review = new Review(
   $('rvcard'),
   $('rv'),
@@ -911,6 +1050,7 @@ async function buildItcNow(fy: string) {
       fy,
       { gstin: $('gstin').value.trim(), legalName: $('legal').value.trim(), purchases: regs.purchases, ...review.extra() },
     );
+    res.bytes = await addStateSheets(res.bytes, packState('itc', clientGstin(), fy, nowTxt()));
     const p = res.periods;
     const label = !p.length ? fy : p.length === 1 ? p[0] : `${p[0]}-${p[p.length - 1]}`;
     const name = `ITC_Recon_${($('gstin').value || 'client').trim()}_${label}.xlsx`;
@@ -978,5 +1118,41 @@ const revenue = new RevenueTab(() => ({
   match: () => settings.get('revenue').match,
   cust: () => settings.get('revenue').cust,
 }));
+
+// what a workbook carries besides the tab's own settings: register mappings and defaults, supplier names, the source files
+const nowTxt = () => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+setStateProvider(t => {
+  const act = activeFiles();
+  // the settings in use, also when they are the standard ones (so a workpaper looks the same on another PC)
+  const keys: Record<string, any> = { [`jjset:${t}`]: settings.get(t) };
+  for (const f of act) {
+    const st = regState.get(f);
+    if (!st || f.kind !== 'Register') continue;
+    keys[sigOf(st)] = st.map;
+    const { claimFy: _c, ...d } = st.d;
+    if (Object.keys(d).length) keys[dKeyOf(st)] = d;
+  }
+  // supplier names of this client only: the names in its purchase register, or GSTINs in its 2B
+  const al = aliasStore();
+  let names: Set<string> | null = null;
+  try {
+    const pur = registerRows($('fy').value, true).purchases;
+    if (pur) names = new Set(pur.map(r => nameKey(r[2])));
+  } catch {
+    /* register not mapped */
+  }
+  const sup = new Set(suppliersFrom2B(act.filter(f => f.kind === 'GSTR-2B').map(f => f.json)).keys());
+  const mine = Object.fromEntries(Object.entries(al).filter(([k, g]) => (names ? names.has(k) : !!g && sup.has(g))));
+  if (Object.keys(mine).length) keys[ALIAS_KEY] = mine;
+  return {
+    keys,
+    legal: String($('legal').value || '').trim() || undefined,
+    files: act.filter(f => f.raw && !WORKBOOK_KINDS.includes(f.kind)).map(f => ({ name: f.name, kind: f.kind, bytes: f.raw! })),
+  };
+});
 
 setTab(tab);

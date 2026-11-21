@@ -1,5 +1,6 @@
 // GST ledger flow tab: portal ledgers, books GST accounts, balances, the three flow statements, reasons, cross-checks, workbook
 import type { InFile } from '../build';
+import { addStateSheets, packState } from '../state';
 import { withProgress } from '../progress';
 import {
   AccHead,
@@ -97,6 +98,10 @@ export class FlowTab {
     $('flBuild').onclick = () => this.build();
   }
 
+  /** read the browser settings again (a workpaper was restored, or the restore undone) */
+  reload() {
+    this.key = '';
+  }
   private load(c: Ctx) {
     const k = `${c.gstin || '-'}:${c.fy}`;
     if (k === this.key) return;
@@ -902,7 +907,8 @@ export class FlowTab {
     if (!r || !this.inp || !this.year) return;
     $('flStatus').textContent = 'Building…';
     try {
-      const bytes = await flowWorkbook(r, {
+      this.save();
+      const book = await flowWorkbook(r, {
         gstin: c.gstin,
         legalName: c.legal,
         fy: c.fy,
@@ -917,6 +923,7 @@ export class FlowTab {
           .filter(f => ['Portal ledger', 'Books ledger', 'GSTR-3B'].includes(f.kind))
           .map(f => ({ name: f.name, kind: f.kind, note: f.note || '' })),
       });
+      const bytes = await addStateSheets(book, packState('flow', c.gstin, c.fy, nowTxt()));
       const full = this.inp.from === monthsOf(c.fy)[0] && this.inp.to === monthsOf(c.fy)[11];
       const name = `GST_Flow_${c.gstin || 'client'}_${c.fy}${full ? '' : `_${ymLabel(this.inp.from)}_to_${ymLabel(this.inp.to)}`}.xlsx`;
       const url = URL.createObjectURL(

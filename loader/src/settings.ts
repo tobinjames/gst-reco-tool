@@ -385,10 +385,18 @@ const setP = (o: any, p: string, v: any) => {
 };
 export class SettingsCard {
   private s: Partial<Record<TabId, Settings>> = {};
+  private cur: TabId | null = null;
   constructor(
     private box: HTMLElement,
     private onChange: (tab: TabId) => void,
+    /** adds to the top of the card after each render (the note on a restored workpaper) */
+    private after?: (box: HTMLElement) => void,
   ) {}
+  /** settings changed outside the card (a workpaper restored, or undone): read them again and redraw */
+  reload() {
+    this.s = {};
+    if (this.cur) this.render(this.cur);
+  }
 
   get(tab: TabId): Settings {
     let s = this.s[tab];
@@ -411,6 +419,7 @@ export class SettingsCard {
   }
 
   render(tab: TabId) {
+    this.cur = tab;
     const s = this.get(tab);
     const open = store.get(`jjsetOpen:${tab}`) ?? true;
     const isDefault = JSON.stringify(s) === JSON.stringify(defaults(tab));
@@ -445,7 +454,7 @@ export class SettingsCard {
     this.rendering = true;
     this.box.innerHTML = `<details class="rv-set" ${open ? 'open' : ''}><summary><b>${isDefault ? 'Standard settings' : 'Your settings'}</b> <span class="muted">${esc(lines.join(' · '))}</span></summary>
       <div class="rv-set-in">${DEFS[tab].map(section).join('')}
-      <div class="row" style="justify-content:space-between"><span class="muted">Saved in this browser for the ${tab === 'itc' ? 'Input Reco' : tab === 'annual' ? 'Annual return' : tab === 'flow' ? 'GST ledger flow' : 'Revenue reco'} tab, and written to the workbook's Read Me.</span>
+      <div class="row" style="justify-content:space-between"><span class="muted">Saved in this browser for the ${tab === 'itc' ? 'Input Reco' : tab === 'annual' ? 'Annual return' : tab === 'flow' ? 'GST ledger flow' : 'Revenue reco'} tab, written to the workbook's Read Me, and saved in the workbook so dropping it back in restores them.</span>
       ${isDefault ? '' : '<button class="small ghost" data-setreset>Back to standard settings</button>'}</div></div></details>`;
     this.rendering = false;
     const q = (sel: string) => this.box.querySelectorAll(sel) as NodeListOf<any>;
@@ -468,6 +477,7 @@ export class SettingsCard {
           this.save(tab);
         }),
     );
+    this.after?.(this.box);
     const reset = this.box.querySelector('[data-setreset]') as any;
     if (reset)
       reset.onclick = () => {
