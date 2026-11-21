@@ -4,6 +4,7 @@ James & James LLP. Offline, single-page HTML tool for monthly ITC reconciliation
 
 - `loader/` Vite + TypeScript app, builds to one HTML file
 - `workbook/` Python (openpyxl) scripts that generate the Excel templates
+- Live tool: https://tobinjames.github.io/gst-reco-tool/ (latest `main`, redeployed on every push by `.github/workflows/pages.yml`; files are read in the browser and never uploaded)
 - Built tool: download it from the repo's Releases page (one HTML file per version)
 - `docs/HANDOVER.md` full handover: architecture, key decisions, open items
 
