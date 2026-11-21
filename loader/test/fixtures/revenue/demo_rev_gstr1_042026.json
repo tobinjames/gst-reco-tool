@@ -1,0 +1,58 @@
+{
+ "gstin": "32AAACJ1234K1Z5",
+ "fp": "042026",
+ "b2b": [
+  {
+   "ctin": "33AAACC2222B1Z2",
+   "inv": [
+    {
+     "inum": "SAL/0303",
+     "idt": "30-03-2026",
+     "val": 35400.0,
+     "pos": "33",
+     "rchrg": "N",
+     "inv_typ": "R",
+     "itms": [
+      {
+       "num": 1801,
+       "itm_det": {
+        "rt": 18,
+        "txval": 30000,
+        "iamt": 5400.0,
+        "camt": 0,
+        "samt": 0,
+        "csamt": 0
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "ctin": "32AAACK1111A1Z1",
+   "inv": [
+    {
+     "inum": "SAL/0401",
+     "idt": "15-04-2026",
+     "val": 118000.0,
+     "pos": "32",
+     "rchrg": "N",
+     "inv_typ": "R",
+     "itms": [
+      {
+       "num": 1801,
+       "itm_det": {
+        "rt": 18,
+        "txval": 100000,
+        "iamt": 0,
+        "camt": 9000.0,
+        "samt": 9000.0,
+        "csamt": 0
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

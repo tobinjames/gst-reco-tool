@@ -6,6 +6,7 @@ import { ThreeB } from './gstr3b';
 import { readTable } from './register';
 import { parsePortal, portalKindOf } from './flow/portal';
 import { looksLikeBooks, parseBooks } from './flow/books';
+import { parseCustomerList } from './revenue/customers';
 import { BookFile, PORTAL_LABEL, PortalLedger } from './flow/types';
 import { isPortal9, processPortal9 } from './portal9';
 import { RawRow, Warn, fyOfDate, fyOfPeriod, fyShift, r2 } from './util';
@@ -34,6 +35,8 @@ export type Kind =
   | 'Register'
   | 'Portal ledger'
   | 'Books ledger'
+  | 'Revenue workbook'
+  | 'Customer list'
   | 'Unknown';
 export interface InFile {
   name: string;
@@ -48,6 +51,8 @@ export interface InFile {
   note?: string;
   portal?: PortalLedger;
   books?: BookFile;
+  /** customer list (name + GSTIN), for the revenue reco */
+  customers?: { name: string; gstin: string }[];
 }
 
 /** expand zips, parse JSON, detect kind. pdfs are parsed by the caller (pdf.js differs in browser / node) */
@@ -107,6 +112,8 @@ async function classifyInner(
       try {
         const rd = await Reader.open(bytes);
         if (rd.has('RAW_GSTR1') && rd.has('Basic')) return [{ name, kind: 'Workbook', bytes, note: 'Annual return workbook' }];
+        if (rd.has('Rev_Items') && rd.has('Books_to_GSTR1'))
+          return [{ name, kind: 'Revenue workbook', bytes, note: 'Revenue reconciliation workbook: your reasons are read back' }];
         if (rd.has('_ITC') && rd.has('Recon_Purchases'))
           return [{ name, kind: 'Workbook', bytes, note: 'ITC reconciliation workbook' }];
       } catch {
@@ -131,6 +138,19 @@ async function classifyInner(
             },
           ];
         }
+      }
+      for (const sh of sheets) {
+        const cl = parseCustomerList(sh.rows);
+        if (cl)
+          return [
+            {
+              name,
+              kind: 'Customer list',
+              bytes,
+              customers: cl,
+              note: `${cl.length} customers with GSTIN (used to name customers in the revenue reco)`,
+            },
+          ];
       }
       for (const sh of sheets)
         if (looksLikeBooks(sh.rows)) {

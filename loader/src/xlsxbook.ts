@@ -17,7 +17,8 @@ export type Style =
   | 'sec'
   | 'ok'
   | 'bad'
-  | 'link';
+  | 'link'
+  | 'input';
 const STYLE_ID: Record<Style, number> = {
   title: 1,
   sub: 2,
@@ -33,6 +34,7 @@ const STYLE_ID: Record<Style, number> = {
   ok: 12,
   bad: 13,
   link: 14,
+  input: 15,
 };
 export interface CellObj {
   v?: string | number | null;
@@ -47,6 +49,8 @@ export interface SheetSpec {
   freeze?: { row: number; col?: number };
   filter?: { row: number; cols: number };
   tab?: string;
+  /** drop-down lists: cells (e.g. "T6:T500") and the list (a range like "Lists!$A$2:$A$20") */
+  lists?: { sqref: string; list: string }[];
 }
 
 export const col = (i: number) => {
@@ -95,18 +99,21 @@ function sheetXml(sh: SheetSpec) {
     sh.filter && sh.rows.length > sh.filter.row
       ? `<autoFilter ref="A${sh.filter.row}:${col(sh.filter.cols - 1)}${sh.rows.length}"/>`
       : '';
+  const dv = sh.lists?.length
+    ? `<dataValidations count="${sh.lists.length}">${sh.lists.map(l => `<dataValidation type="list" allowBlank="1" showErrorMessage="1" errorStyle="warning" sqref="${l.sqref}"><formula1>${xmlEsc(l.list)}</formula1></dataValidation>`).join('')}</dataValidations>`
+    : '';
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${sh.tab ? `<sheetPr><tabColor rgb="FF${sh.tab}"/></sheetPr>` : ''}<sheetViews><sheetView workbookViewId="0" showGridLines="0">${pane}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="13.5"/>
-<cols>${widths.map((w, j) => `<col min="${j + 1}" max="${j + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rows}</sheetData>${af}<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToHeight="0" paperSize="9"/></worksheet>`;
+<cols>${widths.map((w, j) => `<col min="${j + 1}" max="${j + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rows}</sheetData>${af}${dv}<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup orientation="landscape" fitToHeight="0" paperSize="9"/></worksheet>`;
 }
 
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <numFmts count="2"><numFmt numFmtId="164" formatCode="#,##,##0.00;[Red]-#,##,##0.00;&quot;-&quot;"/><numFmt numFmtId="165" formatCode="dd-mm-yyyy"/></numFmts>
 <fonts count="7"><font><sz val="10"/><name val="Arial"/></font><font><b/><sz val="14"/><color rgb="FF2C388E"/><name val="Arial"/></font><font><sz val="10"/><color rgb="FF737B8E"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Arial"/></font><font><b/><sz val="10"/><name val="Arial"/></font><font><b/><sz val="10"/><color rgb="FF2C388E"/><name val="Arial"/></font><font><i/><sz val="9"/><color rgb="FF737B8E"/><name val="Arial"/></font></fonts>
-<fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2C388E"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE3E6F5"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F5EE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFDEEEC"/></patternFill></fill></fills>
+<fills count="7"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF2C388E"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE3E6F5"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8F5EE"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFDEEEC"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFFF8E1"/></patternFill></fill></fills>
 <borders count="3"><border/><border><top style="thin"><color rgb="FF2C388E"/></top><bottom style="double"><color rgb="FF2C388E"/></bottom></border><border><bottom style="thin"><color rgb="FFD3D7E6"/></bottom></border></borders>
 <cellStyleXfs count="1"><xf/></cellStyleXfs>
-<cellXfs count="15">
+<cellXfs count="16">
 <xf/>
 <xf fontId="1" applyFont="1"/>
 <xf fontId="2" applyFont="1"/>
@@ -122,6 +129,7 @@ const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleShe
 <xf fillId="4" applyFill="1"/>
 <xf fillId="5" applyFill="1"/>
 <xf fontId="5" applyFont="1"/>
+<xf fillId="6" borderId="2" applyFill="1" applyBorder="1"/>
 </cellXfs></styleSheet>`;
 
 export async function writeBook(sheets: SheetSpec[], defined: { name: string; ref: string }[] = []): Promise<Uint8Array> {
