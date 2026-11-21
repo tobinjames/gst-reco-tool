@@ -24,6 +24,7 @@ import {
 import { GlResult, REV_CLASSES, REV_CLASS_LABEL, RevClass, glDocs } from './ledgers';
 import { ITEMS_SHEET, RevAudit, readItemsSheet, revenueWorkbook } from './workbook';
 import { REV_GUIDE } from './guide';
+import { CustSuggestion, G1Customer, applyCustomerAliases, customerSuggestions, customersFromG1 } from './customers';
 
 const $ = (id: string) => document.getElementById(id)! as any;
 const fmt = (v: number) => (Math.abs(v) < 0.005 ? '–' : inr(v));
@@ -64,6 +65,11 @@ export class RevenueTab {
   private key = '';
   private st: State = { user: emptyUser(), audit: [], imported: [] };
   private cls: Record<string, RevClass> = {};
+  /** customer name (nameKey) → GSTIN confirmed by the user ('' = unregistered / B2C) */
+  private cust: Record<string, string> = {};
+  private custSug: CustSuggestion[] = [];
+  private custDir = new Map<string, G1Customer>();
+  private custPick = new Map<string, string>();
   private showAllLedgers = false;
   private res: RevResult | null = null;
   private gl: GlResult | null = null;
@@ -86,6 +92,7 @@ export class RevenueTab {
     this.st = { user: emptyUser(), audit: [], imported: [], ...(store.get(`jjrev:${k}`) || {}) };
     this.st.user = { ...emptyUser(), ...this.st.user };
     this.cls = store.get(`jjrev:cls:${c.gstin || '-'}`) || {};
+    this.cust = store.get(`jjrev:cust:${c.gstin || '-'}`) || {};
     this.f = NOF();
     this.sel.clear();
   }
@@ -93,6 +100,7 @@ export class RevenueTab {
     const c = this.ctx();
     store.set(`jjrev:${this.key}`, this.st);
     store.set(`jjrev:cls:${c.gstin || '-'}`, this.cls);
+    store.set(`jjrev:cust:${c.gstin || '-'}`, this.cust);
   }
   private log(change: string, record: string, from: string, to: string, remark = '') {
     this.st.audit.push({ when: nowTxt(), change, record, from, to, remark });
@@ -169,6 +177,13 @@ export class RevenueTab {
       this.source = 'none';
       this.bookRows = [];
     }
+    // customers without a GSTIN: exact names automatically, the rest as the user confirmed
+    this.custDir = customersFromG1(this.g1raw, this.bookRows);
+    this.custSug = this.bookRows.length && this.custDir.size ? customerSuggestions(this.bookRows, this.custDir) : [];
+    const aliases = new Map<string, string>();
+    for (const x of this.custSug) if (x.exact) aliases.set(x.key, x.exact);
+    for (const [k, g] of Object.entries(this.cust)) aliases.set(k, g);
+    if (aliases.size) this.bookRows = applyCustomerAliases(this.bookRows, aliases);
     this.run();
     this.importWorkbooks().then(changed => {
       if (changed) {
@@ -246,6 +261,7 @@ export class RevenueTab {
 
   private render() {
     this.renderBooks();
+    this.renderCustomers();
     this.renderDash();
     this.renderStatements();
     this.renderItems();
@@ -362,6 +378,97 @@ export class RevenueTab {
       show.onclick = () => {
         this.showAllLedgers = !this.showAllLedgers;
         this.renderBooks();
+      };
+  }
+
+  // ---------- customer names (no GSTIN in the books)
+  private renderCustomers() {
+    const card = $('rv-cust'),
+      box = $('rvCust');
+    const sug = this.custSug.filter(x => !x.exact);
+    const pending = sug.filter(x => this.cust[x.key] === undefined);
+    const done = sug.filter(x => this.cust[x.key] !== undefined);
+    const auto = this.custSug.filter(x => x.exact);
+    card.style.display = this.custSug.length ? '' : 'none';
+    if (!this.custSug.length) return;
+    const all = [...this.custDir.values()].sort((a, b) => b.tx - a.tx);
+    const label = (g: string) => {
+      const c = this.custDir.get(g);
+      const n = c ? [...c.names][0] : '';
+      return `${g}${n ? ' · ' + n : ''}${c ? ` · ${c.docs} doc(s) in GSTR-1` : ''}`;
+    };
+    const pickOf = (x: CustSuggestion) => this.custPick.get(x.key) ?? x.cands[0]?.gstin ?? '';
+    const strong = pending.filter(x => x.strong);
+    const noCand = pending.filter(x => !x.cands.length);
+    const rows = [...pending]
+      .sort((a, b) => +!!b.cands.length - +!!a.cands.length)
+      .map(x => {
+        const cur = pickOf(x);
+        const candG = new Set(x.cands.map(c => c.gstin));
+        return `<tr><td><b>${esc(x.name)}</b><div class="muted small">${x.docs} document(s) · taxable ${fmt(x.tx)}</div></td>
+        <td><select data-cpick="${esc(x.key)}" style="max-width:520px">
+          ${x.cands.length ? `<optgroup label="Suggested">${x.cands.map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(label(c.gstin))} · ${c.invHits ? `${c.invHits} invoice no.(s) match · ` : ''}name ${Math.round(c.score * 100)}%</option>`).join('')}</optgroup>` : ''}
+          <optgroup label="Any customer in GSTR-1">${all
+            .filter(c => !candG.has(c.gstin))
+            .map(c => `<option value="${c.gstin}" ${c.gstin === cur ? 'selected' : ''}>${esc(label(c.gstin))}</option>`)
+            .join('')}</optgroup>
+          <option value="-" ${cur === '-' ? 'selected' : ''}>Unregistered customer (B2C)</option>
+          ${!cur ? '<option value="" selected>— pick —</option>' : ''}</select></td>
+        <td class="act"><button class="small" data-cok="${esc(x.key)}">Confirm</button>${x.strong ? ' <span class="tag ok-tag">invoice nos. match</span>' : ''}</td></tr>`;
+      })
+      .join('');
+    box.innerHTML =
+      `<p class="muted" style="margin-top:0">GSTR-1 has the customer GSTIN but no name, so names are learnt from the books: entries of the same customer that carry the GSTIN, and invoices whose number is in GSTR-1 under that GSTIN. ${auto.length ? `${auto.length} customer name(s) matched exactly and were applied. ` : ''}A confirmed customer's entries are matched invoice by invoice instead of being taken as B2C.</p>` +
+      (pending.length
+        ? `<div class="row" style="justify-content:space-between;margin:6px 0"><span class="muted">${pending.length} customer(s) without a GSTIN to confirm.</span><span>${strong.length ? `<button class="small" id="rvCustStrong">Confirm ${strong.length} where invoice nos. match</button> ` : ''}${noCand.length ? `<button class="small ghost" id="rvCustB2c">Mark ${noCand.length} with no match as unregistered (B2C)</button>` : ''}</span></div>
+          <div class="tablewrap"><table class="fl sup"><tr><th>Customer in books</th><th>GSTIN in GSTR-1</th><th></th></tr>${rows}</table></div>`
+        : '<p class="ok-text">All customers without a GSTIN are confirmed.</p>') +
+      (done.length || auto.length
+        ? `<details style="margin-top:10px"><summary class="muted">Matched customers (${done.length + auto.length})</summary><ul class="warns">${[
+            ...auto.map(x => `<li>${esc(x.name)} → ${esc(label(x.exact!))} <span class="muted">(exact name)</span></li>`),
+            ...done.map(
+              x =>
+                `<li>${esc(x.name)} → ${this.cust[x.key] ? esc(label(this.cust[x.key])) : 'Unregistered (B2C)'} <button class="link" data-cundo="${esc(x.key)}">undo</button></li>`,
+            ),
+          ].join('')}</ul></details>`
+        : '');
+    box
+      .querySelectorAll('select[data-cpick]')
+      .forEach((el: any) => (el.onchange = () => this.custPick.set(el.dataset.cpick, el.value)));
+    const confirm = (x: CustSuggestion, v: string) => {
+      if (!v) return;
+      const g = v === '-' ? '' : v;
+      this.cust[x.key] = g;
+      this.log('Customer GSTIN', x.name, '(none)', g ? label(g) : 'Unregistered (B2C)');
+    };
+    box.querySelectorAll('button[data-cok]').forEach(
+      (el: any) =>
+        (el.onclick = () => {
+          const x = pending.find(p => p.key === el.dataset.cok);
+          if (x) confirm(x, pickOf(x));
+          this.refresh();
+        }),
+    );
+    box.querySelectorAll('button[data-cundo]').forEach(
+      (el: any) =>
+        (el.onclick = () => {
+          const x = done.find(p => p.key === el.dataset.cundo);
+          delete this.cust[el.dataset.cundo];
+          if (x) this.log('Customer GSTIN', x.name, 'confirmed', 'undone');
+          this.refresh();
+        }),
+    );
+    const nb = box.querySelector('#rvCustB2c');
+    if (nb)
+      nb.onclick = () => {
+        for (const x of noCand) confirm(x, '-');
+        this.refresh();
+      };
+    const st = box.querySelector('#rvCustStrong');
+    if (st)
+      st.onclick = () => {
+        for (const x of strong) confirm(x, x.cands[0].gstin);
+        this.refresh();
       };
   }
 

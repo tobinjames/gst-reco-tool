@@ -9,6 +9,7 @@ import { parseBooks } from '../src/flow/books';
 import type { ThreeB } from '../src/gstr3b';
 import { RevResult, emptyUser, runRevenue } from '../src/revenue/engine';
 import { glDocs, guessRevenue } from '../src/revenue/ledgers';
+import { applyCustomerAliases, customerSuggestions, customersFromG1 } from '../src/revenue/customers';
 import { ITEMS_SHEET, readItemsSheet, revenueWorkbook } from '../src/revenue/workbook';
 import { Reader } from '../src/xlsx';
 import { readRows } from '../src/integrity';
@@ -108,6 +109,33 @@ near(rg.books.turnover, r.books.turnover, 'same turnover as the register');
 near(line(rg, 'B2C'), [-2000 - 40000 + 10000, -360 - 7200 + 1800], 'GL: entries without GSTIN not in GSTR-1 are taken as B2C');
 near(line(rg, 'NEXT_FY'), [-30000, -5400], 'GL: next year by invoice no.');
 near(line(rg, 'unx'), [0, 0], 'GL: ties');
+// customer names: GSTR-1 has no names, the GL dump has no GSTINs; names are learnt from invoice numbers found in GSTR-1
+const glRows = gl.docs.map(d => d.row);
+const dirC = customersFromG1(g1, glRows);
+const sug = customerSuggestions(glRows, dirC);
+assert.equal(
+  sug.find(x => x.name === 'Kerala Customer Pvt Ltd')!.exact,
+  '32AAACK1111A1Z1',
+  'Kerala learnt from its invoice nos.',
+);
+assert.equal(sug.find(x => x.name === 'Chennai Customer Pvt Ltd')!.exact, '33AAACC2222B1Z2');
+assert.equal(sug.find(x => x.name === 'Cash Sales')!.cands.length, 0, 'cash sales: no GSTR-1 customer');
+// a spelling variant with no invoice in GSTR-1 is suggested by name, for the user to confirm
+const variant = [[45900, 'SAL/9999', 'Kerala Customers P. Ltd', '', '', 'B2B', 'INV', '', '', null, 18, 1000, 90, 90, 0, 0]];
+const vs = customerSuggestions(variant, dirC);
+assert.equal(vs[0].cands[0]?.gstin, '32AAACK1111A1Z1', 'name variant suggested');
+assert.ok(!vs[0].exact && !vs[0].strong, 'variant needs the user');
+const aliases = new Map<string, string>(sug.filter(x => x.exact).map(x => [x.key, x.exact!] as [string, string]));
+const rgc = runRevenue({
+  fy: FY,
+  books: { rows: applyCustomerAliases(glRows, aliases), source: 'gl' },
+  g1,
+  threeB,
+  user: emptyUser(),
+});
+near(line(rgc, 'NOT_REPORTED'), line(r, 'NOT_REPORTED'), 'GL + customer names: same as the register');
+near(line(rgc, 'B2C'), line(r, 'B2C'), 'GL + customer names: B2C as the register');
+near(line(rgc, 'unx'), [0, 0], 'GL + customer names: ties');
 // ignore the interest ledger entirely
 const rg2 = runRevenue({
   fy: FY,
