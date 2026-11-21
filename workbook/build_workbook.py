@@ -14,15 +14,17 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.comments import Comment
 
-import os
+import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import jjfront
 LOADER = os.path.join(HERE, '..', 'loader')
 M = json.load(open(os.path.join(HERE, 'masters.json')))
 # writes straight into the loader, so a rebuild needs no copying
 OUT = os.path.join(LOADER, 'template', 'GST_Annual_Return_Workbook.xlsx')
 
 # ---------------------------------------------------------------- styles
-F = 'Arial'
+F = 'Aptos'
 f_norm = Font(name=F, size=9)
 f_bold = Font(name=F, size=9, bold=True)
 f_title = Font(name=F, size=13, bold=True, color='2C388E')
@@ -130,7 +132,7 @@ T4 = [
     D('D', 'Supply to SEZs on payment of tax', '4D', ret=[('G1', '4D')], books=[('BS', '4D')], path='table4.sez', note='GSTR-1 SEZWP'),
     D('E', 'Deemed Exports', '4E', ret=[('G1', '4E')], books=[('BS', '4E')], path='table4.deemed', note='GSTR-1 DE'),
     D('F', 'Advances on which tax has been paid but invoice has not been issued', '4F', ret=[('G1', '4F')], books=[('BS', '4F')], path='table4.at', note='GSTR-1 AT less ATADJ'),
-    D('G', 'Inward supplies on which tax is to be paid on reverse charge basis', '4G', ret=[('3B', '3.1d')], books=[('BP', '6C-ip'), ('BP', '6C-cg'), ('BP', '6C-is'), ('BP', '6D-ip'), ('BP', '6D-cg'), ('BP', '6D-is'), ('BP', '6F')], path='table4.rchrg', note='GSTR-3B 3.1(d)'),
+    D('G', 'Inward supplies on which tax is to be paid on reverse charge basis', '4G', ret=[('3B', '3.1d')], books=[('BP', '6C-*'), ('BP', '6D-*'), ('BP', '6F')], path='table4.rchrg', note='GSTR-3B 3.1(d)'),
     D('G1', 'Supplies on which e-commerce operator is required to pay tax as per section 9(5) [ECO to report]', '4G1', ret=[('G1', '4G1')], books=[('BS', '4G1')], path='table4.ecom', note='GSTR-1 Table 15 (ECO)'),
     S('H', 'Sub-total (A to G1 above)', '4H', [(1, '4A'), (1, '4B'), (1, '4C'), (1, '4D'), (1, '4E'), (1, '4F'), (1, '4G'), (1, '4G1')]),
     D('I', 'Credit Notes issued in respect of transactions specified in (B) to (E) above (-)', '4I', ret=[('G1', '4I')], books=[('BS', '4I')], path='table4.cr_nt', note='GSTR-1 CDNR/CDNUR credit notes'),
@@ -168,7 +170,7 @@ def itc3(code, desc, base, ret_fn, path, note=''):
 
 T6 = [H('6', 'Details of ITC availed during the financial year'),
       D('A', 'Total amount of input tax credit availed through FORM GSTR-3B (sum total of Table 4A of FORM GSTR-3B)', '6A', 'X',
-        ret=[('3B', '4A1'), ('3B', '4A2'), ('3B', '4A3'), ('3B', '4A4'), ('3B', '4A5')], books=None, locked=True,
+        ret=[('3B', '4A?')], books=None, locked=True,
         path='table6.itc_3b', note='Auto-populated & non-editable on portal (not uploaded)'),
       D('A1', 'ITC of preceding financial year availed in the financial year (included in 6A) other than ITC reclaimed under rule 37 and rule 37A', '6A1', 'X',
         ret=[('2B', '6A1')], books=[('BP', '6A1')], basis='Books', path='table6.itc_otr', note='2B of this FY carrying previous-FY documents (indicative) / books'),
@@ -916,15 +918,17 @@ def status_summary(statuses, status_col, sum_cols, labels):
         ws.column_dimensions['A'].width = max(ws.column_dimensions['A'].width or 0, 34)
     return f
 
+HELPER = ['Books tax', '2B tax', 'Claimable CGST', 'Claimable SGST', 'Claimable IGST', 'Claimable cess', 'Claimable tax', 'Books month']
+HELPER_NUM = {'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ'}
 P_STATUS = ['Matched', 'Matched - value difference', 'Matched - invoice no. differs', 'Matched - supplier GSTIN differs',
             'Matched - in next FY 2B', 'Matched - supplier total', 'Matched - manual', 'In books, not in 2B', 'In 2B, not in books', 'Not compared (RCM / ISD / imports)']
 recon_sheet('Recon_Purchases', 'Purchase register vs GSTR-2B, invoice by invoice. Manual match: give the rows that belong together the same Match code (e.g. M1), save, and drop the workbook into the Loader. Codes and remarks are kept on refresh.',
             ['Status', 'Match basis', 'Supplier GSTIN', 'Supplier name', 'Invoice no. (books)', 'Invoice no. (2B)', 'Date (books)', 'Date (2B)',
              'Books taxable', 'Books CGST', 'Books SGST', 'Books IGST', 'Books cess', '2B taxable', '2B CGST', '2B SGST', '2B IGST', '2B cess',
              'Diff taxable (books - 2B)', 'Diff tax (books - 2B)', '2B period', '2B section', '2B ITC available', 'Books ITC status', 'Books ITC claimed FY',
-             'GSTR-9 effect', 'Match code', 'Remarks', 'ID'],
-            [26, 20, 17, 26, 16, 16, 11, 11] + [12] * 12 + [9, 8, 8, 16, 10, 30, 10, 30, 22],
-            set('IJKLMNOPQRST'),
+             'GSTR-9 effect', 'Match code', 'Remarks', 'ID'] + HELPER,
+            [26, 20, 17, 26, 16, 16, 11, 11] + [12] * 12 + [9, 8, 8, 16, 10, 30, 10, 30, 22] + [12] * 7 + [10],
+            set('IJKLMNOPQRST') | HELPER_NUM,
             status_summary(P_STATUS, 'A', ['I', 'N', 'S', 'T'], ['Books taxable', '2B taxable', 'Diff taxable', 'Diff tax']))
 wb['Recon_Purchases']['G3'] = 'Tax = CGST + SGST + IGST + cess. Tolerance Rs 1.'
 wb['Recon_Purchases']['G3'].font = f_sub
@@ -1002,14 +1006,155 @@ ws.column_dimensions['A'].width = 22; ws.column_dimensions['C'].width = 26; ws.c
 ws['H1'] = 'Source: GSTR-9 Offline Tool v2.2 (GSTN) Master sheet - HSN list used for FY 2025-26 HSN validation.'
 ws['H1'].font = f_sub
 
-# ================================================================= READ ME (first sheet)
-ws = wb.create_sheet('Read Me', 0)
+
+# ================================================================= SUMMARY (key figures, all links to the table sheets)
+ws = wb.create_sheet('Summary')
+title(ws, 'Summary: GSTR-9 / GSTR-9C as it will be filed', 'Every figure is a link to the "To be Filed" block of the table sheets (or to the 9C / Checks sheets); click it to see where it comes from.')
+for j, (h, w) in enumerate(zip(['Item', 'Taxable value', 'Central Tax', 'State/UT Tax', 'Integrated Tax', 'Cess', 'Where it comes from'], [58, 16, 15, 15, 15, 13, 46])):
+    cell(ws, f'{CL(j + 1)}5', h, f_hdr, fill_hdr, align=center)
+    ws.column_dimensions[CL(j + 1)].width = w
+ws.row_dimensions[5].height = 26
+r = 6
+def srow(label, key, cols='A', bold=False):
+    global r
+    sh, rr = ROWMAP[key]
+    cell(ws, f'A{r}', label, f_bold if bold else f_norm, fill_sub if bold else None, align=wrap)
+    for i in range(5):
+        ok = cols == 'A' or (cols == 'T' and i == 0) or (cols == 'X' and i > 0)
+        cell(ws, f'{CL(2 + i)}{r}', ('=' + g9(key, i)) if ok else None, f_link if ok else f_norm, None if ok else fill_na, NUM)
+    cell(ws, f'G{r}', f"{sh}, row {rr} (Table {key}), To be Filed", f_sub)
+    r += 1
+def ssec(t):
+    global r
+    ws.merge_cells(f'A{r}:G{r}')
+    cell(ws, f'A{r}', t, f_bold, fill_sec)
+    r += 1
+ssec('Outward supplies and turnover')
+srow('4N  Supplies and advances on which tax is to be paid', '4N', bold=True)
+srow('5M  Turnover on which tax is not to be paid', '5M', 'T')
+srow('5N  Total turnover (including advances)', '5N', 'T', True)
+srow('10  Supplies / tax declared in next FY returns (+)', '10')
+srow('11  Supplies / tax reduced in next FY returns (-)', '11')
+srow('Total turnover (5N + 10 - 11)', 'TT', 'T', True)
+ssec('Input tax credit')
+srow('6O  Total ITC availed', '6O', 'X', True)
+srow('7I  Total ITC reversed', '7I', 'X')
+srow('7J  Net ITC available for utilisation', '7J', 'X', True)
+srow('8A  ITC as per GSTR-2B', '8A', 'X')
+srow('8D  Difference [8A - (8B + 8C)]', '8D', 'X')
+srow('13  ITC of the FY availed in the next FY', '13', 'X')
+ssec('Tax payable and paid (Table 9)')
+cell(ws, f'A{r}', 'Tax payable (To be Filed, Table 9)', f_bold, fill_sub)
+cell(ws, f'B{r}', None, fill=fill_na)
+for i, k in enumerate(['9B', '9C', '9A', '9D']):
+    cell(ws, f'{CL(3 + i)}{r}', f"='9 & 14 Tax Paid'!F{ROWMAP[k][1]}", f_link, None, NUM)
+cell(ws, f'G{r}', '9 & 14 Tax Paid, column F', f_sub); r += 1
+cell(ws, f'A{r}', 'Tax paid (cash + ITC, from the portal JSON)', f_norm)
+cell(ws, f'B{r}', None, fill=fill_na)
+for i, k in enumerate(['9B', '9C', '9A', '9D']):
+    cell(ws, f'{CL(3 + i)}{r}', f"='9 & 14 Tax Paid'!L{ROWMAP[k][1]}", f_link, None, NUM)
+cell(ws, f'G{r}', '9 & 14 Tax Paid, column L', f_sub); r += 1
+cell(ws, f'A{r}', 'Not paid (payable - paid)', f_bold, fill_sub)
+cell(ws, f'B{r}', None, fill=fill_na)
+for i in range(4):
+    c = CL(3 + i)
+    cell(ws, f'{c}{r}', f'={c}{r - 2}-{c}{r - 1}', f_bold, fill_sub, NUM)
+cell(ws, f'G{r}', 'Pay through DRC-03 before filing', f_sub); r += 1
+ssec('GSTR-9C: un-reconciled amounts (should be explained in 9C Tables 6, 8, 10 and 13)')
+for lab, key, col in [('5R  Un-reconciled gross turnover', '5R', 'C'), ('7G  Un-reconciled taxable turnover', '7G', 'C'), ('12F  Un-reconciled ITC', '12F', 'C')]:
+    cell(ws, f'A{r}', lab, f_norm)
+    cell(ws, f'B{r}', f"='GSTR-9C'!{col}{R9C[key]}", f_link, None, NUM)
+    for i in range(4): cell(ws, f'{CL(3 + i)}{r}', None, fill=fill_na)
+    cell(ws, f'G{r}', f'GSTR-9C, row {R9C[key]}', f_sub); r += 1
+cell(ws, f'A{r}', '9R  Un-reconciled payment of tax', f_norm)
+cell(ws, f'B{r}', None, fill=fill_na)
+for i, c in enumerate('DEFG'):
+    cell(ws, f'{CL(3 + i)}{r}', f"='GSTR-9C'!{c}{R9C['9R']}", f_link, None, NUM)
+cell(ws, f'G{r}', f"GSTR-9C, row {R9C['9R']}", f_sub); r += 1
+ssec('Checks before filing')
+for lab, f_ in [('Checks to clear ("Check")', '=COUNTIF(Checks!$D:$D,"Check")'), ('Items to explain ("Review")', '=COUNTIF(Checks!$D:$D,"Review")')]:
+    cell(ws, f'A{r}', lab, f_bold)
+    cell(ws, f'B{r}', f_, f_bold, None, '#,##0')
+    cell(ws, f'G{r}', 'Checks sheet, column D', f_sub); r += 1
+cell(ws, f'A{r}', 'Prior workpapers: differences to look at', f_bold)
+cell(ws, f'B{r}', '=COUNTIF(Workpapers!$H:$H,"Look at")', f_bold, None, '#,##0')
+cell(ws, f'G{r}', 'Workpapers sheet, column H', f_sub); r += 1
+ws.freeze_panes = 'B6'
+
+# ================================================================= WORKPAPERS (figures from the Input Reco, Revenue reco and GST ledger flow workpapers)
+# The Loader writes column B (the workpaper's figure) and F (where in that workpaper); the rest is fixed here.
+ws = wb.create_sheet('Workpapers')
+title(ws, 'Prior workpapers: Input Reco, Revenue reco and GST ledger flow',
+      'Recommended route: finish these three workpapers first, then drop them into the Annual return tab. Their figures are copied here (column B) and compared with this workbook (column C).')
+for j, (h, w) in enumerate(zip(['Item', 'As per the workpaper', 'As per this workbook', 'Difference (C - B)', 'Where in this workbook', 'Where in the workpaper', 'What to do', 'Status'],
+                               [52, 18, 18, 16, 34, 34, 64, 10])):
+    cell(ws, f'{CL(j + 1)}5', h, f_hdr, fill_hdr, align=center)
+    ws.column_dimensions[CL(j + 1)].width = w
+ws.row_dimensions[5].height = 26
+WP = {}
+r = 6
+def wsec(key, t):
+    global r
+    WP[key] = r
+    for j in range(1, 9):
+        ws.cell(row=r, column=j).fill = fill_sec
+    cell(ws, f'A{r}', t, f_bold, fill_sec)
+    cell(ws, f'F{r}', 'Not loaded', f_sub, fill_sec)
+    r += 1
+def wrow(key, label, here=None, where='', todo=''):
+    global r
+    WP[key] = r
+    cell(ws, f'A{r}', label, f_norm, align=wrap)
+    cell(ws, f'B{r}', None, f_norm, None, NUM)
+    cell(ws, f'C{r}', here, f_link if here else f_norm, None if here else fill_na, NUM)
+    cell(ws, f'D{r}', f'=IF(OR(B{r}="",C{r}=""),"",C{r}-B{r})' if here else None, f_bold if here else f_norm, None if here else fill_na, NUM)
+    cell(ws, f'E{r}', where, f_sub, align=wrap)
+    cell(ws, f'F{r}', None, f_sub, align=wrap)
+    cell(ws, f'G{r}', todo, f_sub, align=wrap)
+    cell(ws, f'H{r}', f'=IF(OR(B{r}="",C{r}=""),"",IF(ABS(D{r})<1,"OK","Look at"))' if here else None, f_bold, align=center)
+    r += 1
+tax = lambda key: '=' + '+'.join(g9(key, i) for i in range(1, 5))
+wsec('itc', 'Input Reco workpaper (GSTR-2B vs purchase register)')
+wrow('itc_avail', 'ITC available as per GSTR-2B (tax)', tax('8A'), '6-8 ITC: 8A, To be Filed (tax)', '8A is the portal figure once the portal JSON is loaded; a difference means 2B months missing in one of the two.')
+wrow('itc_books', 'ITC as per books (invoices compared with 2B)', '=SUM(Recon_Purchases!$AD$16:$AD$20000)-SUMIFS(Recon_Purchases!$AD$16:$AD$20000,Recon_Purchases!$A$16:$A$20000,"Not compared (RCM / ISD / imports)")', 'Recon_Purchases, column AD', 'Should agree: the same register and 2B, matched again here with the workpaper\'s match codes.')
+wrow('itc_claim', 'ITC claimable: matched invoices (lower of books and 2B)', '=SUM(Recon_Purchases!$AJ$16:$AJ$20000)', 'Recon_Purchases, column AJ', 'Compare with 6B (ITC availed in 3B on these supplies): availed above this needs reversal in 7 or an explanation.')
+wrow('itc_booksonly', 'In books, not in 2B (do not claim)', '=SUMIFS(Recon_Purchases!$AD$16:$AD$20000,Recon_Purchases!$A$16:$A$20000,"In books, not in 2B")', 'Recon_Purchases, status "In books, not in 2B"', 'If availed in 3B, reverse (Table 7H) or pay through DRC-03.')
+wrow('itc_2bonly', 'In 2B, not in books', '=SUMIFS(Recon_Purchases!$AE$16:$AE$20000,Recon_Purchases!$A$16:$A$20000,"In 2B, not in books")', 'Recon_Purchases, status "In 2B, not in books"', 'Book the invoice, or report in 8E / 8F if not availed.')
+r += 1
+wsec('rev', 'Revenue reco workpaper (books vs GSTR-1 vs GSTR-3B)')
+wrow('rev_books', 'Turnover as per books (taxable value)', None, '', 'Starting point for GSTR-9C Table 5A (turnover as per audited accounts), after the audit adjustments.')
+wrow('rev_g1', 'Turnover as per GSTR-1 (taxable value)', '=' + g9('TT', 0), 'Total turnover (5N + 10 - 11), To be Filed', 'A difference is usually Table 10 / 11 items or a basis chosen as Books in Tables 4-5.')
+wrow('rev_g1tax', 'Tax as per GSTR-1', tax('4N'), '4-5 Outward: 4N, To be Filed (tax)', '')
+wrow('rev_3b', 'Turnover as per GSTR-3B (taxable value)', None, '', 'GSTR-3B vs GSTR-1 differences go to Table 9 / 14 and DRC-03.')
+wrow('rev_unx1', 'Books to GSTR-1: difference not explained (taxable value)', None, '', 'Should be nil: explain it in the Revenue reco workpaper first.')
+wrow('rev_unx2', 'GSTR-1 to GSTR-3B: difference not explained (taxable value)', None, '', 'Should be nil.')
+r += 1
+wsec('flow', 'GST ledger flow workpaper (books GST ledgers vs portal ledgers)')
+wrow('flow_itc_books', 'Electronic credit ledger: closing as per books', None, '', '')
+wrow('flow_itc_portal', 'Electronic credit ledger: closing as per portal', None, '', '')
+wrow('flow_itc_unx', 'Electronic credit ledger: not explained', None, '', 'Should be nil.')
+wrow('flow_liab_unx', 'Tax liability: not explained', None, '', 'Should be nil.')
+wrow('flow_cash_unx', 'Electronic cash ledger: not explained', None, '', 'Should be nil.')
+wrow('flow_fix', 'Set-up issues to fix first', None, '', 'Fix them in the GST ledger flow workpaper.')
+wrow('flow_checks', 'Cross-checks that do not agree', None, '', '')
+wrow('flow_journals', 'Suggested journals', None, '', 'Post them in the books before finalising the accounts used for GSTR-9C.')
+ws.conditional_formatting.add(f'H6:H{r}', FormulaRule(formula=['H6="Look at"'], fill=PatternFill('solid', fgColor='FFE699')))
+ws.conditional_formatting.add(f'H6:H{r}', FormulaRule(formula=['H6="OK"'], fill=PatternFill('solid', fgColor='C6EFCE')))
+ws.freeze_panes = 'B6'
+json.dump(WP, open(os.path.join(LOADER, 'src', 'wprows.json'), 'w'), indent=0)
+
+# ================================================================= INSTRUCTIONS (one sheet; was Read Me)
+ws = wb.create_sheet('Instructions', 0)
 ws.sheet_view.showGridLines = False
 ws.column_dimensions['A'].width = 3; ws.column_dimensions['B'].width = 26; ws.column_dimensions['C'].width = 100
 ws['B2'] = 'GST Annual Return Workbook - GSTR-9 & GSTR-9C'; ws['B2'].font = f_title
 ws['B3'] = 'Macro-free. Works in Excel 2010+, Excel for Mac and LibreOffice. Built for FY 2025-26 formats (GSTR-9 offline tool v2.2, GSTR-9C v2.9).'
 ws['B3'].font = f_sub
 rows = [
+    ('TWO WAYS TO BUILD IT', ''),
+    ('Recommended: from workpapers', 'Finish the Input Reco, Revenue reco and GST ledger flow tabs first and save their workpapers. In the Annual return tab, drop those three workpapers (and the portal GSTR-9 JSON, plus the next year\'s GSTR-1 / 2B for April to October if they are not in them). Their source files, settings, match codes and reasons come with them, and the Workpapers sheet compares their figures with this workbook.'),
+    ('Direct from the files', 'Not recommended: drop GSTR-1, GSTR-3B, GSTR-2B and the registers straight into the Annual return tab. It works, but nothing has been reviewed invoice by invoice first.'),
+    ('', ''),
     ('HOW IT FLOWS', ''),
     ('1. Basic', 'Enter client name, GSTIN and FY. Previous / next FY are derived.'),
     ('2. Load data', 'The GST Annual Return Loader fills the RAW_ sheets (portal GSTR-9 JSON, GSTR-1 JSONs, GSTR-3B PDFs, GSTR-2B JSONs). They can also be pasted manually.'),
@@ -1061,14 +1206,14 @@ for rr in range(5, 5 + len(rows)):
         ws[f'B{rr}'].fill = fill_input; ws[f'B{rr}'].font = Font(name=F, size=9, bold=True, color='0000FF')
 
 # sheet order & tab colours
-order = ['Read Me', 'Basic', '4-5 Outward', '6-8 ITC', '9 & 14 Tax Paid', '10-13 Next FY', '15-16 Other', '17 HSN Outward', '18 HSN Inward',
+order = ['Instructions', 'Summary', 'Workpapers', 'Basic', '4-5 Outward', '6-8 ITC', '9 & 14 Tax Paid', '10-13 Next FY', '15-16 Other', '17 HSN Outward', '18 HSN Inward',
          'GSTR-9C', 'Checks', 'Books_Sales', 'Books_Purchase', 'Recon_Purchases', 'Recon_Suppliers', 'Recon_Sales', 'Recon_Sales_Monthly', 'RAW_Portal9', 'RAW_GSTR1', 'RAW_GSTR1_HSN', 'RAW_3B', 'RAW_3B_PAY', 'RAW_2B', 'Map', 'Masters']
 wb._sheets = [wb[n] for n in order]
 for n in order:
-    wb[n].sheet_properties.tabColor = ('2C388E' if n in ('Read Me', 'Basic') else '7030A0' if n[0].isdigit() or n == 'GSTR-9C' else
+    wb[n].sheet_properties.tabColor = ('2C388E' if n in ('Instructions', 'Summary', 'Workpapers', 'Basic') else '7030A0' if n[0].isdigit() or n == 'GSTR-9C' else
                                        'C00000' if n == 'Checks' else 'ED7D31' if n.startswith('Books') else 'FFC000' if n.startswith('Recon') else '70AD47' if n.startswith('RAW') else '808080')
 for ws in wb.worksheets:
-    if ws.title not in ('Read Me', 'Basic', 'Map', 'Masters'):
+    if ws.title not in ('Instructions', 'Basic', 'Map', 'Masters'):
         ws['A1'] = "='Basic'!$C$4&\"  |  \"&'Basic'!$C$6&\"  |  FY \"&'Basic'!$C$7"
         ws['A1'].font = f_bold
 # ---------------- James & James branding
@@ -1077,7 +1222,7 @@ FIRM_FULL = 'James & James LLP, Chartered Accountants'
 FIRM_ADDR = 'HB 48, 2nd Cross Rd, Panampilly Nagar, Kochi, Kerala 682036  ·  consult@jjglobal.in  ·  +91 94006 26941  ·  jjglobal.in'
 brand_font = Font(name=F, size=9, bold=True, color='2C388E')
 for ws in wb.worksheets:
-    if ws.title not in ('Read Me', 'Basic', 'Map', 'Masters'):
+    if ws.title not in ('Instructions', 'Basic', 'Map', 'Masters'):
         ws['A1'] = "='Basic'!$C$4&\"  |  \"&'Basic'!$C$6&\"  |  FY \"&'Basic'!$C$7&\"  |  Prepared by James & James LLP\""
     # print setup: landscape, fit to width, branded footer
     ws.page_setup.orientation = 'landscape'
@@ -1094,7 +1239,7 @@ for ws in wb.worksheets:
     ws.oddHeader.right.text = 'GSTR-9 / GSTR-9C working papers'
     ws.oddHeader.right.size = 8
 # cover branding
-rm = wb['Read Me']
+rm = wb['Instructions']
 rm['B1'] = 'JAMES & JAMES LLP  ·  CHARTERED ACCOUNTANTS'
 rm['B1'].font = Font(name=F, size=10, bold=True, color='2C388E')
 rm['B3'] = 'Prepared by James & James LLP. ' + rm['B3'].value
@@ -1115,7 +1260,7 @@ wb.properties.subject = 'GSTR-9 and GSTR-9C working papers'
 wb.properties.keywords = 'GSTR-9, GSTR-9C, James & James LLP'
 wb.properties.company = FIRM if hasattr(wb.properties, 'company') else None
 # ---------------- integrity sheet (written by the Loader; used to detect edits before JSON generation)
-TEMPLATE_VERSION = '2026.11.20-7'
+TEMPLATE_VERSION = '2026.11.21-8'
 ig = wb.create_sheet('_Integrity')
 ig['A1'] = 'Item'; ig['B1'] = 'Value'; ig['C1'] = 'Rows'
 ig['A2'] = 'template_version'; ig['B2'] = TEMPLATE_VERSION
@@ -1125,7 +1270,43 @@ ig.protection.sheet = True
 ig.protection.password = 'JJ-GST9-integrity'
 ig.protection.selectLockedCells = True
 ig.protection.selectUnlockedCells = True
+# ---------------- Index (first sheet), Aptos everywhere, a link back to the Index on every sheet
+jjfront.add_index(wb, 'GST annual return: GSTR-9 and GSTR-9C',
+                  [('Client', "='Basic'!C4"), ('GSTIN', "='Basic'!C6"), ('Financial year', "='Basic'!C7"),
+                   ('Prepared by', "='Basic'!C12"), ('Reviewed by', "='Basic'!C13")],
+                  [('Instructions', 'Reference', 'How to build, read and file this workbook (both routes), column blocks and colours.'),
+                   ('Summary', 'Summary', 'GSTR-9 / 9C as it will be filed: turnover, ITC, tax payable and paid, 9C un-reconciled amounts, checks.'),
+                   ('Workpapers', 'Summary', 'Figures from the Input Reco, Revenue reco and GST ledger flow workpapers against this workbook.'),
+                   ('Basic', 'Your input', 'Client, GSTIN, financial year, preparer.'),
+                   ('4-5 Outward', 'Working', 'Tables 4 and 5: portal, returns, books, adjustments, to be filed.'),
+                   ('6-8 ITC', 'Working', 'Tables 6, 7 and 8: ITC availed, reversed, 2B.'),
+                   ('9 & 14 Tax Paid', 'Working', 'Table 9 tax payable and paid; Table 14 differential tax.'),
+                   ('10-13 Next FY', 'Working', 'Tables 10 to 13: this year\'s items in next year\'s returns (April to October).'),
+                   ('15-16 Other', 'Your input', 'Tables 15 and 16.'),
+                   ('17 HSN Outward', 'Working', 'Table 17: HSN summary of outward supplies.'),
+                   ('18 HSN Inward', 'Working', 'Table 18: HSN summary of inward supplies.'),
+                   ('GSTR-9C', 'Working', 'Reconciliation statement: turnover, tax and ITC against the accounts.'),
+                   ('Checks', 'Working', 'Checks to clear and items to explain before filing.'),
+                   ('Books_Sales', 'Source data', 'Sales register as mapped in the Loader, with the GSTR-9 key of each line.'),
+                   ('Books_Purchase', 'Source data', 'Purchase register as mapped in the Loader, with the GSTR-9 key of each line.'),
+                   ('Recon_Purchases', 'Working', 'Purchases vs GSTR-2B invoice by invoice (match codes from the Input Reco workpaper).'),
+                   ('Recon_Suppliers', 'Working', 'Supplier-wise totals of the purchase reconciliation.'),
+                   ('Recon_Sales', 'Working', 'Sales vs GSTR-1 document by document.'),
+                   ('Recon_Sales_Monthly', 'Working', 'Sales vs GSTR-1 by month.'),
+                   ('RAW_Portal9', 'Source data', 'Portal auto-drafted GSTR-9 JSON.'),
+                   ('RAW_GSTR1', 'Source data', 'GSTR-1 documents with their GSTR-9 key.'),
+                   ('RAW_GSTR1_HSN', 'Source data', 'GSTR-1 HSN rows.'),
+                   ('RAW_3B', 'Source data', 'GSTR-3B tables from the PDFs.'),
+                   ('RAW_3B_PAY', 'Source data', 'GSTR-3B Table 6.1 payment of tax.'),
+                   ('RAW_2B', 'Source data', 'GSTR-2B documents with their GSTR-9 key.'),
+                   ('Map', 'Reference', 'Supply type / document type → GSTR-9 key.'),
+                   ('Masters', 'Reference', 'HSN, UQC and rate masters (GSTN offline tool).')],
+                  'J&J GST Reco Loader')
+jjfront.aptos(wb)
+jjfront.add_back_links(wb)
 wb.active = 0
+for w in wb.worksheets:
+    w.sheet_view.tabSelected = w.title == 'Index'
 wb.save(OUT)
 json.dump({k: v for k, v in ROWMAP.items()}, open(os.path.join(LOADER, 'src', 'rowmap.json'), 'w'), indent=0)
 PATHS = {}

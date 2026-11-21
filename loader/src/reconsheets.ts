@@ -2,6 +2,9 @@
 // so the summaries follow any change made to the rows in Excel. Columns of Recon_Purchases (recon.ts reconPurchases):
 // A status, C supplier GSTIN, E books no., F 2B no., G books date (dd-mm-yyyy), J-M books CGST/SGST/IGST/cess,
 // O-R 2B CGST/SGST/IGST/cess, U 2B period (MM/YYYY), W 2B ITC available.
+// Helper columns written beside every row (AD-AK, withHelpers) keep the summaries to one SUMIFS a cell (Tobin, Nov 2026:
+// formulas a reader without the tool can follow): AD books tax, AE 2B tax, AF-AI claimable CGST/SGST/IGST/cess (the lower
+// of books and 2B on a matched invoice whose 2B says ITC available), AJ claimable tax, AK books month (MM/YYYY).
 import type { Reader, V, Workbook } from './xlsx';
 
 const rg = (c: string) => `Recon_Purchases!$${c}$16:$${c}$20000`;
@@ -9,9 +12,36 @@ const NC = '"<>Not compared (RCM / ISD / imports)"';
 const BK = ['J', 'K', 'L', 'M'],
   TB = ['O', 'P', 'Q', 'R'];
 const f = (s: string): V => ({ f: s });
-/** lower of books and 2B, per head, on each row */
-const lower = (i: number) => `((${rg(BK[i])}<${rg(TB[i])})*${rg(BK[i])}+(${rg(BK[i])}>=${rg(TB[i])})*${rg(TB[i])})`;
 const sum4 = (cols: string[]) => `(${cols.map(rg).join('+')})`;
+const CL = ['AF', 'AG', 'AH', 'AI'];
+export const HELPER_HEADERS = [
+  'Books tax',
+  '2B tax',
+  'Claimable CGST',
+  'Claimable SGST',
+  'Claimable IGST',
+  'Claimable cess',
+  'Claimable tax',
+  'Books month',
+];
+/** the helper formulas AD-AK for the Recon_Purchases rows written from row 16 */
+export function withHelpers(rows: any[][]): V[][] {
+  return rows.map((row, i) => {
+    const r = 16 + i,
+      ok = `AND(LEFT($A${r},7)="Matched",$W${r}<>"N")`;
+    const out: V[] = [...row];
+    while (out.length < 29) out.push(null);
+    out.length = 29;
+    out.push(
+      f(`J${r}+K${r}+L${r}+M${r}`),
+      f(`O${r}+P${r}+Q${r}+R${r}`),
+      ...BK.map((b, j) => f(`IF(${ok},MIN(${b}${r},${TB[j]}${r}),0)`)),
+      f(`SUM(AF${r}:AI${r})`),
+      f(`IF(LEN($G${r})=10,MID($G${r},4,2)&"/"&RIGHT($G${r},4),"")`),
+    );
+    return out;
+  });
+}
 
 /** ITC position on Summary (C12:F17, one column per head) */
 export function summaryCells(): Record<string, V> {
@@ -21,7 +51,7 @@ export function summaryCells(): Record<string, V> {
       t = rg(TB[i]);
     out[`${c}12`] = f(`SUMIFS(${t},${rg('F')},"<>",${rg('W')},"<>N")`);
     out[`${c}13`] = f(`SUMIFS(${b},${rg('E')},"<>",${rg('A')},${NC})`);
-    out[`${c}14`] = f(`SUMPRODUCT((LEFT(${rg('A')},7)="Matched")*(${rg('W')}<>"N")*${lower(i)})`);
+    out[`${c}14`] = f(`SUM(${rg(CL[i])})`);
     out[`${c}15`] = f(`SUMIFS(${b},${rg('A')},"In books, not in 2B")`);
     out[`${c}16`] = f(`SUMIFS(${t},${rg('A')},"In 2B, not in books")`);
     out[`${c}17`] = f(
@@ -35,17 +65,14 @@ export function summaryCells(): Record<string, V> {
 export function monthRows(keys: string[], label: (k: string) => string): V[][] {
   const rows: V[][] = keys.map((k, i) => {
     const r = 6 + i,
-      per = `$H${r}`,
-      bm = `(MID(${rg('G')},4,7)=SUBSTITUTE(${per},"/","-"))`;
+      per = `$H${r}`;
     return [
       label(k),
-      f(`SUMPRODUCT((${rg('U')}=${per})*(${rg('F')}<>"")*(${rg('W')}<>"N")*${sum4(TB)})`),
-      f(
-        `SUMPRODUCT((${rg('U')}=${per})*(LEFT(${rg('A')},7)="Matched")*(${rg('W')}<>"N")*(${[0, 1, 2, 3].map(lower).join('+')}))`,
-      ),
-      f(`SUMPRODUCT((${rg('U')}=${per})*(${rg('A')}="In 2B, not in books")*${sum4(TB)})`),
-      f(`SUMPRODUCT(${bm}*(${rg('E')}<>"")*(LEFT(${rg('A')},12)<>"Not compared")*${sum4(BK)})`),
-      f(`SUMPRODUCT(${bm}*(${rg('A')}="In books, not in 2B")*${sum4(BK)})`),
+      f(`SUMIFS(${rg('AE')},${rg('U')},${per},${rg('F')},"<>",${rg('W')},"<>N")`),
+      f(`SUMIFS(${rg('AJ')},${rg('U')},${per})`),
+      f(`SUMIFS(${rg('AE')},${rg('U')},${per},${rg('A')},"In 2B, not in books")`),
+      f(`SUMIFS(${rg('AD')},${rg('AK')},${per},${rg('E')},"<>",${rg('A')},${NC})`),
+      f(`SUMIFS(${rg('AD')},${rg('AK')},${per},${rg('A')},"In books, not in 2B")`),
       null,
       `${k.slice(0, 2)}/${k.slice(2)}`,
     ];
@@ -89,8 +116,8 @@ export function supplierRows(sup: any[][], tol: number): V[][] {
       s[1],
       f(`COUNTIFS(${c},${k},${rg('E')},"<>",${rg('A')},${NC})`),
       f(`COUNTIFS(${c},${k},${rg('F')},"<>",${rg('A')},${NC})`),
-      f(BK.map(b => `SUMIFS(${rg(b)},${c},${k},${rg('A')},${NC})`).join('+')),
-      f(TB.map(b => `SUMIFS(${rg(b)},${c},${k},${rg('A')},${NC})`).join('+')),
+      f(`SUMIFS(${rg('AD')},${c},${k},${rg('A')},${NC})`),
+      f(`SUMIFS(${rg('AE')},${c},${k},${rg('A')},${NC})`),
       f(`E${r}-F${r}`),
       cnt('In books, not in 2B'),
       cnt('In 2B, not in books'),

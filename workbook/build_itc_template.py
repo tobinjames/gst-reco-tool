@@ -14,15 +14,17 @@ from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.formatting.rule import FormulaRule
 from openpyxl.comments import Comment
 
-import os
+import os, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOADER = os.path.join(HERE, '..', 'loader')
+sys.path.insert(0, HERE)
+import jjfront
 M = json.load(open(os.path.join(HERE, 'masters.json')))
 # writes straight into the loader, so a rebuild needs no copying
 OUT = os.path.join(LOADER, 'template', 'ITC_Recon_Template.xlsx')
 
 # ---------------------------------------------------------------- styles
-F = 'Arial'
+F = 'Aptos'
 f_norm = Font(name=F, size=9)
 f_bold = Font(name=F, size=9, bold=True)
 f_title = Font(name=F, size=13, bold=True, color='2C388E')
@@ -128,15 +130,17 @@ def status_summary(statuses, status_col, sum_cols, labels):
         ws.column_dimensions['A'].width = max(ws.column_dimensions['A'].width or 0, 34)
     return f
 
+HELPER = ['Books tax', '2B tax', 'Claimable CGST', 'Claimable SGST', 'Claimable IGST', 'Claimable cess', 'Claimable tax', 'Books month']
+HELPER_NUM = {'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ'}
 P_STATUS = ['Matched', 'Matched - value difference', 'Matched - invoice no. differs', 'Matched - supplier GSTIN differs',
             'Matched - in next FY 2B', 'Matched - supplier total', 'Matched - manual', 'In books, not in 2B', 'In 2B, not in books', 'Not compared (RCM / ISD / imports)']
 recon_sheet('Recon_Purchases', 'Purchase register vs GSTR-2B, invoice by invoice. Manual match: give the rows that belong together the same Match code (e.g. M1), save, and drop the workbook into the Loader. Codes and remarks are kept on refresh.',
             ['Status', 'Match basis', 'Supplier GSTIN', 'Supplier name', 'Invoice no. (books)', 'Invoice no. (2B)', 'Date (books)', 'Date (2B)',
              'Books taxable', 'Books CGST', 'Books SGST', 'Books IGST', 'Books cess', '2B taxable', '2B CGST', '2B SGST', '2B IGST', '2B cess',
              'Diff taxable (books - 2B)', 'Diff tax (books - 2B)', '2B period', '2B section', '2B ITC available', 'Books ITC status', 'Books ITC claimed FY',
-             'GSTR-9 effect', 'Match code', 'Remarks', 'ID'],
-            [26, 20, 17, 26, 16, 16, 11, 11] + [12] * 12 + [9, 8, 8, 16, 10, 30, 10, 30, 22],
-            set('IJKLMNOPQRST'),
+             'GSTR-9 effect', 'Match code', 'Remarks', 'ID'] + HELPER,
+            [26, 20, 17, 26, 16, 16, 11, 11] + [12] * 12 + [9, 8, 8, 16, 10, 30, 10, 30, 22] + [12] * 7 + [10],
+            set('IJKLMNOPQRST') | HELPER_NUM,
             status_summary(P_STATUS, 'A', ['I', 'N', 'S', 'T'], ['Books taxable', '2B taxable', 'Diff taxable', 'Diff tax']))
 wb['Recon_Purchases']['G3'] = 'Tax = CGST + SGST + IGST + cess. Tolerance Rs 1.'
 wb['Recon_Purchases']['G3'].font = f_sub
@@ -210,8 +214,17 @@ lines = ['ITC available as per GSTR-2B (forward charge, ITC available = Y)',
          'In books, not in 2B - do not claim; follow up with supplier',
          'In 2B, not in books - book the invoice or treat as not availed',
          'Value differences on matched invoices (books - 2B)']
+HOW = ['SUMIFS of the 2B tax columns (O-R) of Recon_Purchases: rows with a 2B invoice whose "2B ITC available" is not N.',
+       'SUMIFS of the books tax columns (J-M) of Recon_Purchases: rows with a books invoice, other than "Not compared".',
+       'SUM of the "Claimable" columns (AF-AI) of Recon_Purchases: on each matched invoice, the lower of books and 2B (MIN).',
+       'SUMIFS of the books tax columns where Status = "In books, not in 2B".',
+       'SUMIFS of the 2B tax columns where Status = "In 2B, not in books".',
+       'Books minus 2B tax where Status = "Matched - value difference".']
+cell(ws, f'H{r0}', 'How it is worked out', f_hdr, fill_hdr)
+ws.column_dimensions['H'].width = 80
 for i, lab in enumerate(lines):
     r = r0 + 1 + i
+    cell(ws, f'H{r}', HOW[i], Font(name=F, size=9, color='4A5068'), align=wrap)
     cell(ws, f'B{r}', lab, f_bold if i == 2 else f_norm, fill_blk['To be Filed'] if i == 2 else None)
     for j in range(4): cell(ws, f'{CL(3 + j)}{r}', 0, f_bold if i == 2 else f_norm, fill_blk['To be Filed'] if i == 2 else None, NUM)
     cell(ws, f'G{r}', f'=SUM(C{r}:F{r})', f_bold, fill_sub, NUM)
@@ -229,8 +242,7 @@ notes = ['How to use: drop the 2B JSON(s) and the purchase register into the Loa
          'Manual match: give rows that belong together the same Match code in Recon_Purchases, save, and drop this workbook into the Loader with the same files.',
          'Recon_Suppliers lists suppliers with differences - use it for vendor follow-up. Month_wise splits the position by month when several 2B months are loaded.',
          'ITC claimable is the lower of books and 2B on each matched invoice (section 16(2)(aa)); check eligibility (17(5)) and payment (rule 37) separately.']
-for i, t in enumerate(notes):
-    ws[f'B{r2 + i}'] = t; ws[f'B{r2 + i}'].font = f_sub
+ws[f'B{r2}'] = 'How to use this workpaper, and how each figure is worked out: see the Instructions sheet.'; ws[f'B{r2}'].font = f_sub
 for w in wb.worksheets:
     if w.title != 'Summary':
         w['A1'] = "=Summary!$C$4&\"  |  \"&Summary!$C$5&\"  |  2B \"&Summary!$C$6&\"  |  Prepared by James & James LLP\""
@@ -242,8 +254,40 @@ for w in wb.worksheets:
 wb['Summary'].sheet_properties.tabColor = '2C388E'
 for n in ('Recon_Purchases', 'Recon_Suppliers'): wb[n].sheet_properties.tabColor = 'FFC000'
 wb['Books_Purchase'].sheet_properties.tabColor = 'ED7D31'; wb['Month_wise'].sheet_properties.tabColor = 'FFC000'; wb['RAW_2B'].sheet_properties.tabColor = '70AD47'
-m = wb.create_sheet('_ITC'); m['A1'] = 'itc_recon_template'; m['B1'] = '2026.11.20-1'; m.sheet_state = 'veryHidden'
+# ---- Index, Instructions (one sheet), Aptos everywhere, a link back to the Index on every sheet
+jjfront.add_instructions(wb, 'ITC reconciliation: GSTR-2B vs purchase register', [
+    ('What this workpaper does', [
+        ('Purpose', 'Compares the purchase register with GSTR-2B invoice by invoice and works out the ITC that can be claimed: the lower of books and 2B on each matched invoice whose 2B says ITC is available.'),
+        ('Start here', 'Summary (ITC position), then Recon_Purchases (every invoice with its status) and Recon_Suppliers (for vendor follow-up).')]),
+    ('How the figures are worked out', [
+        ('Recon_Purchases', 'One row per invoice: books side (columns I-M), 2B side (N-R), differences (S-T), status (A) and how it matched (B). Columns AD-AK work out books tax, 2B tax, the claimable ITC per head (MIN of books and 2B on matched rows) and the books month, so every summary is one SUMIFS.'),
+        ('Status summary', 'Rows 3-14 of Recon_Purchases: COUNTIF / SUMIF of the rows below by Status.'),
+        ('Summary', 'Each ITC position line is a SUMIFS (or SUM) over Recon_Purchases; column H says which.'),
+        ('Recon_Suppliers', 'COUNTIFS / SUMIFS of Recon_Purchases by supplier GSTIN.'),
+        ('Month_wise', 'SUMIFS of Recon_Purchases by 2B period (column U) for the 2B side and by books month (column AK) for the books side.'),
+        ('Books_Purchase / RAW_2B', 'The purchase register as mapped in the Loader, and the GSTR-2B documents read from the JSON files.')]),
+    ('Working with the tool', [
+        ('Match by hand', 'Give rows that belong together the same Match code (e.g. M1) in Recon_Purchases; X keeps two rows apart. Save and drop the workbook into the Loader with the same files: codes and remarks are kept.'),
+        ('Next time', 'Drop this saved workpaper alone into the Loader (Input Reco tab): it brings back its 2B files, register, mapping, settings and supplier names. A newer purchase register dropped with it replaces the saved copy; 2B stays as filed.'),
+        ('Annual return', 'This workpaper, with the Revenue reco and GST ledger flow workpapers, is what the Annual return tab builds GSTR-9 / 9C from: its match codes carry over to the annual purchase reconciliation.'),
+        ('Eligibility', 'ITC claimable here is the 2B test (section 16(2)(aa)) only; check eligibility (17(5)) and payment to suppliers (rule 37) separately.')]),
+], 0)
+jjfront.add_index(wb, 'ITC reconciliation: GSTR-2B vs purchase register',
+                  [('Client', '=Summary!C4'), ('GSTIN', '=Summary!C5'), ('GSTR-2B periods', '=Summary!C6'), ('Financial year', '=Summary!C7'), ('Prepared on', '=Summary!C9')],
+                  [('Instructions', 'Reference', 'How to use and read this workpaper.'),
+                   ('Summary', 'Summary', 'ITC position by head: available in 2B, as per books, claimable, books only, 2B only, value differences.'),
+                   ('Recon_Purchases', 'Working', 'Every invoice: books vs 2B, status, match basis, GSTR-9 effect. Match code / Remarks are yours.'),
+                   ('Recon_Suppliers', 'Working', 'Supplier-wise totals and differences, for vendor follow-up.'),
+                   ('Month_wise', 'Working', 'ITC position by month (2B by 2B period, books by invoice date).'),
+                   ('Books_Purchase', 'Source data', 'The purchase register as mapped in the Loader.'),
+                   ('RAW_2B', 'Source data', 'GSTR-2B documents read from the JSON files.')],
+                  'J&J GST Reco Loader (see the Loader version on Summary)')
+jjfront.aptos(wb)
+jjfront.add_back_links(wb)
+m = wb.create_sheet('_ITC'); m['A1'] = 'itc_recon_template'; m['B1'] = '2026.11.21-2'; m.sheet_state = 'veryHidden'
 wb.properties.creator = 'James & James LLP'; wb.properties.title = 'ITC Reconciliation - GSTR-2B vs books'
 wb.active = 0
+for w in wb.worksheets:
+    w.sheet_view.tabSelected = w.title == 'Index'
 wb.save(OUT)
 print('saved', OUT, 'summary rows', r0, r1)

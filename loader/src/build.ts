@@ -14,7 +14,7 @@ import { isPortal9, processPortal9 } from './portal9';
 import { RawRow, Warn, fyOfDate, fyOfPeriod, fyShift, r2 } from './util';
 import { Reader, Workbook, colLetter as colLetterOf } from './xlsx';
 import { RAW_SHEETS, fingerprint, seal, sealLines, readRows } from './integrity';
-import { fixReconLayout, monthRows, salesMonthRows, summaryCells, supplierRows } from './reconsheets';
+import { HELPER_HEADERS, fixReconLayout, monthRows, salesMonthRows, summaryCells, supplierRows, withHelpers } from './reconsheets';
 import { DEFAULT_MATCH, KeepApart, Manual, MatchOptions, describeMatch, reconPurchases, reconSales } from './recon';
 
 /** what the user decided in the Loader's Review step: manual matches (Match codes) and documents kept apart (code X) */
@@ -26,7 +26,8 @@ export interface ReconExtra {
   match?: MatchOptions;
   decisions?: { purchases?: Decisions; sales?: Decisions };
 }
-export const LOADER_VERSION = '0.4';
+export { LOADER_VERSION } from './version';
+import { LOADER_VERSION } from './version';
 
 export type Kind =
   | 'GSTR-1'
@@ -461,7 +462,8 @@ export async function buildWorkbook(
         dp?.keepApart ?? keepApart.Recon_Purchases,
       );
       notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Purchases', msg: m }));
-      await wb.writeRows('Recon_Purchases', 16, pr.rows, true);
+      await wb.writeRows('Recon_Purchases', 16, withHelpers(pr.rows), true);
+    await wb.setCells('Recon_Purchases', Object.fromEntries(HELPER_HEADERS.map((h, i) => [`A${String.fromCharCode(68 + i)}15`, h])));
       await wb.writeRows('Recon_Suppliers', 6, supplierRows(pr.supRows, mo.tol), true);
       await wb.setCells('Recon_Purchases', { G3: `Tax = CGST + SGST + IGST + cess. ${describeMatch(mo)}` });
       recon.purchases = pr.stats;
@@ -616,7 +618,7 @@ export async function buildItc(
     await step('Reading GSTR-2B…', 0.2);
     const r = process2b(b2, fy, py, ny, warns);
     raw2b = r.rows.map(row);
-    periods = r.periods;
+    periods = [...r.periods].sort((a, b) => (a.slice(2) + a.slice(0, 2)).localeCompare(b.slice(2) + b.slice(0, 2)));
     await wb.writeRows('RAW_2B', 6, raw2b);
   } else {
     raw2b = baseRd ? await readRows(baseRd, 'RAW_2B', 6) : [];
@@ -652,7 +654,8 @@ export async function buildItc(
     );
     await wb.setCells('Recon_Purchases', { G3: `Tax = CGST + SGST + IGST + cess. ${describeMatch(mo)}` });
     notes.forEach(m => warns.push({ level: 'warn', file: 'Recon_Purchases', msg: m }));
-    await wb.writeRows('Recon_Purchases', 16, pr.rows, true);
+    await wb.writeRows('Recon_Purchases', 16, withHelpers(pr.rows), true);
+    await wb.setCells('Recon_Purchases', Object.fromEntries(HELPER_HEADERS.map((h, i) => [`A${String.fromCharCode(68 + i)}15`, h])));
     await wb.writeRows('Recon_Suppliers', 6, supplierRows(pr.supRows, mo.tol), true);
     recon = pr.stats;
     // ITC position by head (CGST, SGST, IGST, Cess)

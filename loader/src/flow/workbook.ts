@@ -1,6 +1,8 @@
 // GST ledger flow workbook: detail sheets carry every input row with its classification; the flow statements,
 // differences and checks are SUMIFS formulas over them (cached values are written too, Excel recalculates on open).
 import { C, SheetSpec, col, serial, writeBook } from '../xlsxbook';
+import { SheetInfo, Section, heading, how, indexSheet, instructionsSheet } from '../wpfront';
+import { LOADER_VERSION } from '../version';
 import { BUCKETS, BLOCK_LABEL, Block, INTERNAL, PORTAL_LABEL, UNMAPPED, ACC_TYPE_LABEL, bucketOf } from './types';
 import { HEAD_KEYS, HeadK, Result, bucketLabel, ymLabel } from './engine';
 import { FLOW_GUIDE } from './guide';
@@ -47,16 +49,15 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
     pref.set(e.id, pLine.get(k)!);
   });
   const period = `${ymLabel(meta.from)} to ${ymLabel(meta.to)}`;
-  const title = (t: string): C[][] => [
-    [{ v: t, s: 'title' }],
-    [
-      {
-        v: `${meta.legalName || 'Client'} · GSTIN ${meta.gstin || '-'} · FY ${meta.fy} · ${period} · Prepared by James & James LLP`,
-        s: 'sub',
-      },
-    ],
-    [],
-  ];
+  const title = (t: string): C[][] => heading(t, { ...meta, period });
+  // each books / portal line's movement in Year_Compare (a column on the line sheets, so Year_Compare is one SUMIFS a cell)
+  const y0 = meta.year;
+  const code0 = (k: string) => (k.includes(':') ? k.split(':')[1] : k);
+  const dupLabel = new Set(y0.comps.map(c => c.label).filter((l, i, a) => a.indexOf(l) !== i));
+  const moveName = (c: (typeof y0.comps)[number]) => (dupLabel.has(c.label) ? `${BLOCK_NAME[c.block]}: ${c.label}` : c.label);
+  const movement = new Map<string, string>();
+  for (const c of y0.comps) for (const k of c.buckets) movement.set(`${c.block}|${code0(k)}`, moveName(c));
+  const moveOf = (block: string, bucket: string) => movement.get(`${block}|${code0(bucket)}`) ?? '';
   const hdr = (cols: string[]): C[] => cols.map(c => ({ v: c, s: 'hdr' }));
 
   // ---- Books_Lines
@@ -86,6 +87,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
       'Row amount',
       'Classified by',
       'Narration',
+      'Year_Compare movement',
     ]),
   ];
   r.books.forEach((e, i) => {
@@ -115,6 +117,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
       { f: sign === 1 ? `P${row}` : `-P${row}`, v: N(e.effect * sign) },
       e.rule,
       l.narration,
+      e.where === 'in' && e.block ? moveOf(e.block, e.bucket) : '',
     ]);
   });
   // ---- Portal_Lines
@@ -141,6 +144,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
       'Flow row code',
       'Flow row',
       'Row amount',
+      'Year_Compare movement',
     ]),
   ];
   r.portal.forEach((e, i) => {
@@ -168,6 +172,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
       e.block ? e.bucket : '',
       e.block ? bucketLabel(e.bucket) : 'Discharge of interest / fee (shown in the cash ledger)',
       e.block ? { f: sign === 1 ? `P${row}` : `-P${row}`, v: N(e.effect * sign) } : null,
+      e.where === 'in' && e.block ? moveOf(e.block, e.bucket) : '',
     ]);
   });
   // ---- Balances
@@ -340,17 +345,12 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
 
   // ---- Year_Compare: formulas over the line sheets (column P = effect on the balance; Q block; R flow row code; books F / portal H = month compared)
   const ms = r.months.filter(m => m >= meta.from && m <= meta.to);
-  const code = (k: string) => (k.includes(':') ? k.split(':')[1] : k);
-  const sumF = (sh: 'Books_Lines' | 'Portal_Lines', c: { block: Block; buckets: string[]; gsign: number }, month?: string) => {
+  // one SUMIFS a cell: the "Year_Compare movement" column of the line sheets (W on Books_Lines, U on Portal_Lines)
+  const sumF = (sh: 'Books_Lines' | 'Portal_Lines', c: { gsign: number }, row: number, monthCell?: string) => {
     const mc = sh === 'Books_Lines' ? 'F' : 'H',
-      ic = sh === 'Books_Lines' ? 'G' : 'I';
-    const t = c.buckets
-      .map(
-        k =>
-          `SUMIFS(${sh}!$P:$P,${sh}!$Q:$Q,"${c.block}",${sh}!$R:$R,"${code(k)}",${sh}!$${ic}:$${ic},"in"${month ? `,${sh}!$${mc}:$${mc},"${month}"` : ''})`,
-      )
-      .join('+');
-    return c.gsign === 1 ? `(${t})` : `-(${t})`;
+      vc = sh === 'Books_Lines' ? 'W' : 'U';
+    const f = `SUMIFS(${sh}!$P:$P,${sh}!$${vc}:$${vc},$A${row}${monthCell ? `,${sh}!$${mc}:$${mc},${monthCell}` : ''})`;
+    return c.gsign === 1 ? f : `-${f}`;
   };
   const yc: C[][] = [
     ...title('Year comparison: each movement as per books and as per portal'),
@@ -363,7 +363,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
       'To look at',
       'Where it is worked',
       'What to do',
-      ...ms.map(m => `${ymLabel(m)} diff`),
+      ...ms.map(m => ymLabel(m)),
     ]),
   ];
   for (const b of BLOCKS) {
@@ -373,9 +373,9 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
     for (const c of cs) {
       const row = yc.length + 1;
       yc.push([
-        c.label,
-        { f: sumF('Books_Lines', c), v: sum(c.books, HEAD_KEYS) },
-        { f: sumF('Portal_Lines', c), v: sum(c.portal, HEAD_KEYS) },
+        moveName(c),
+        { f: sumF('Books_Lines', c, row), v: sum(c.books, HEAD_KEYS) },
+        { f: sumF('Portal_Lines', c, row), v: sum(c.portal, HEAD_KEYS) },
         { f: `B${row}-C${row}`, v: sum(c.diff, HEAD_KEYS), s: 'numB' },
         sum(c.cutoff, HEAD_KEYS) || null,
         { f: `D${row}-E${row}`, v: sum(c.rest, HEAD_KEYS), s: 'numB' },
@@ -389,16 +389,18 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
                 : 'Invoice level'
           : 'Agrees',
         { v: Math.abs(sum(c.diff, HEAD_KEYS)) > 0.5 ? c.action : '', s: 'wrap' },
-        ...c.months.map(
-          x => ({ f: `${sumF('Books_Lines', c, ymLabel(x.m))}-${sumF('Portal_Lines', c, ymLabel(x.m))}`, v: x.d }) as C,
-        ),
+        ...c.months.map((x, i) => {
+          const mcell = `${col(8 + i)}$${BL_H}`,
+            pf = sumF('Portal_Lines', c, row, mcell);
+          return { f: `${sumF('Books_Lines', c, row, mcell)}${pf.startsWith('-') ? '+' + pf.slice(1) : '-' + pf}`, v: x.d } as C;
+        }),
       ]);
     }
     yc.push([]);
   }
   yc.push([
     {
-      v: 'Totals across tax heads. Flow_Difference and Month_wise show each head. The year-end cut-off is what was in the books in the period and on the portal in a later return (or the other way): it clears next period.',
+      v: 'How it is worked out: Books = SUMIFS of "Effect on balance" (column P) of Books_Lines whose "Year_Compare movement" (column W) is the movement in column A; Portal = the same over Portal_Lines (column U); the month columns add the month in row 4 as a second condition. A movement that reduces the balance is shown with its sign turned. Totals across tax heads. Flow_Difference and Month_wise show each head. The year-end cut-off is what was in the books in the period and on the portal in a later return (or the other way): it clears next period.',
       s: 'note',
     },
   ]);
@@ -548,6 +550,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
     ...title('Closing statement: books to the GST portal'),
     hdr(['', ...HEAD_KEYS.map(h => HEADS_TXT[h]), 'Total', 'What to do']),
   ];
+  const closeAt: { block: Block; books: number; journals: number; adjusted: number; portal: number; unexplained: number[] }[] = [];
   for (const c of y.closing) {
     const L = layout.find(x => x.block === c.block)!;
     cl.push([{ v: BLOCK_NAME[c.block], s: 'sec' }, ...blank(7)]);
@@ -588,6 +591,14 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
       ...HEAD_KEYS.map((h, i) => ({ f: `Flow_Portal!${HC[i]}${L.close}`, v: N(c.portal[h]), s: 'numTot' }) as C),
       { f: `SUM(B${rp}:F${rp})`, v: sum(c.portal, HEAD_KEYS), s: 'numTot' },
     ]);
+    closeAt.push({
+      block: c.block,
+      books: rb,
+      journals: rj,
+      adjusted: ra,
+      portal: rp,
+      unexplained: lr.filter((_, i) => c.lines[i].kind === 'unexplained'),
+    });
     const rc = cl.length + 1;
     cl.push([
       { v: 'Check (should be nil)', s: 'note' },
@@ -691,92 +702,166 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
   meta.audit.forEach(a => au.push([a.when, a.change, a.record, a.from, a.to, { v: a.remark, s: 'wrap' }]));
   if (!meta.audit.length)
     au.push(["No changes: every classification is the tool's own, from the account types confirmed in the Loader."]);
-  // ---- Read Me
-  const rm: C[][] = [
-    [{ v: 'GST ledger flow: books vs GST portal', s: 'title' }],
-    [{ v: `${meta.legalName || 'Client'} · GSTIN ${meta.gstin || '-'} · FY ${meta.fy} · ${period}`, s: 'bold' }],
-    [{ v: `Built by the James & James GST Reco Loader on ${meta.builtAt}. Prepared by James & James LLP.`, s: 'sub' }],
+  // ---- Summary: the closing position of each ledger and what is left, all links to Closing / Flow sheets
+  const sm: C[][] = [
+    ...title('Summary: GST ledgers as per books and as per the portal'),
+    hdr(['Closing balance (all heads)', 'As per books', 'Suggested journals', 'Books after journals', 'As per portal', 'Not explained', 'How it is worked out']),
+  ];
+  for (const c of closeAt) {
+    const row = sm.length + 1,
+      cc = y.closing.find(x => x.block === c.block)!;
+    const unx = cc.lines.filter(l => l.kind === 'unexplained').reduce((t, l) => t + sum(l.amt, HEAD_KEYS), 0);
+    sm.push([
+      { v: BLOCK_NAME[c.block], s: 'bold' },
+      { f: `Closing!G${c.books}`, v: sum(cc.books, HEAD_KEYS) },
+      { f: `Closing!G${c.journals}`, v: sum(cc.journals, HEAD_KEYS) },
+      { f: `B${row}+C${row}`, v: sum(cc.adjusted, HEAD_KEYS), s: 'numB' },
+      { f: `Closing!G${c.portal}`, v: sum(cc.portal, HEAD_KEYS) },
+      c.unexplained.length
+        ? { f: c.unexplained.map(x => `Closing!G${x}`).join('+'), v: N(unx), s: Math.abs(unx) > 0.5 ? 'bad' : 'ok' }
+        : { v: 0, s: 'ok' },
+      how(
+        `Closing sheet, Total column: books (row ${c.books}), journals (row ${c.journals}), portal (row ${c.portal})${c.unexplained.length ? `, not explained (row ${c.unexplained.join(', ')})` : ''}.`,
+      ),
+    ]);
+  }
+  const nFix = y.setup.filter(x => x.level === 'fix').length,
+    nChk = r.checks.filter(c => !c.ok).length;
+  sm.push(
     [],
+    [{ v: 'Status', s: 'sec' }, ...blank(6)],
+    hdr(['Item', 'Count', '', '', '', '', 'How it is worked out']),
     [
-      { v: 'How to read this workbook', s: 'sec' },
-      { v: '', s: 'sec' },
+      'Set-up issues to fix first',
+      { f: 'COUNTIF(Setup_Checks!$A:$A,"Fix first")', v: nFix, s: nFix ? 'bad' : 'ok' },
+      '',
+      '',
+      '',
+      '',
+      how('Count of "Fix first" in column A of Setup_Checks.'),
     ],
     [
-      'Flow_Books',
-      'Opening, movements and closing of input tax credit, tax liability, the electronic cash ledger and interest / fees, from the books only.',
+      'Cross-checks that do not agree',
+      { f: 'COUNTIF(Cross_Checks!$I:$I,"Check")', v: nChk, s: nChk ? 'bad' : 'ok' },
+      '',
+      '',
+      '',
+      '',
+      how('Count of "Check" in the Status column of Cross_Checks (difference above ₹1).'),
     ],
     [
-      'Flow_Portal',
-      'The same rows from the portal ledgers only (credit ledger, cash ledger, liability register), by return period.',
+      'Suggested journals',
+      y.journals.length,
+      '',
+      '',
+      '',
+      '',
+      how('Journals sheet: review them and post them in the books; nothing is posted by the tool.'),
     ],
     [
-      'Setup_Checks',
-      'Fix these first: a missing portal ledger, a missing opening balance or a books line not placed in a flow row shows up as a difference everywhere else.',
+      'Your changes to the records',
+      meta.audit.length,
+      '',
+      '',
+      '',
+      '',
+      how('Audit sheet: every change made in the Loader, with your remark.'),
     ],
-    [
-      'Year_Compare',
-      'Each movement for the year as per books and as per portal, the year-end cut-off, what is left to look at, and the difference month by month (formulas over the line sheets).',
-    ],
-    [
-      'ITC_3way',
-      'ITC as per books, GSTR-2B and GSTR-3B: books to 2B invoice by invoice, 2B to 3B month by month. ITC_Invoices lists the invoices that differ.',
-    ],
-    [
-      'Journals',
-      'Suggested entries that bring set-off, payments and deposits in the books in line with the portal. Nothing is posted: review them and post them in the books.',
-    ],
-    [
-      'Closing',
-      'For each ledger: closing as per books, add the journals, the remaining differences line by line, closing as per portal. "Check" must be nil.',
-    ],
-    ['Flow_Difference', 'Books minus portal, row by row.'],
-    [
-      'Cross_Checks',
-      'The portal ledgers against each other (cash ledger vs liability paid in cash; credit ledger vs liability paid by ITC) and against GSTR-3B where its PDFs were loaded.',
-    ],
-    ['Month_wise', 'Books, portal and difference for each row, head and month.'],
-    [
-      'Books_Lines / Portal_Lines',
-      'Every input line with its flow row, and how it was classified. All the figures above are SUMIFS over these sheets.',
-    ],
-    ['Balances', 'Opening balances: entered, printed in the files, or carried from entries before the period.'],
-    ['Audit', 'Every change you made in the Loader, with your remark.'],
     [],
+    [{ v: 'Movements for the year (Year_Compare)', s: 'sec' }, ...blank(6)],
+    hdr(['Movement', 'Books', 'Portal', 'Difference', 'Year-end cut-off', 'To look at', 'How it is worked out']),
+  );
+  for (let i = 0; i < yc.length; i++) {
+    const rw = yc[i];
+    const a0 = rw?.[0];
+    const isLine = rw && rw.length > 6 && typeof rw[1] === 'object' && rw[1] && (rw[1] as any).f;
+    if (!isLine) continue;
+    const yr = i + 1,
+      row = sm.length + 1;
+    sm.push([
+      typeof a0 === 'string' ? a0 : ((a0 as any)?.v ?? ''),
+      { f: `Year_Compare!B${yr}`, v: (rw[1] as any).v },
+      { f: `Year_Compare!C${yr}`, v: (rw[2] as any).v },
+      { f: `B${row}-C${row}`, v: (rw[3] as any).v, s: 'numB' },
+      { f: `Year_Compare!E${yr}`, v: typeof rw[4] === 'number' ? rw[4] : 0 },
+      { f: `D${row}-E${row}`, v: (rw[5] as any).v, s: Math.abs((rw[5] as any).v || 0) > 0.5 ? 'bad' : 'numB' },
+      how(`Year_Compare row ${yr}`),
+    ]);
+  }
+
+  // ---- Instructions (one sheet) and Index
+  const front = {
+    title: 'GST ledger flow: books vs GST portal',
+    legalName: meta.legalName,
+    gstin: meta.gstin,
+    fy: meta.fy,
+    period,
+    builtAt: meta.builtAt,
+    version: LOADER_VERSION,
+  };
+  const guideLines: [string, string][] = FLOW_GUIDE.flatMap(g => [
     [
-      { v: 'Basis', s: 'sec' },
-      { v: '', s: 'sec' },
-    ],
-    [
-      {
-        v: 'Books are taken by voucher date. Portal entries are taken by return period (an April filing of the March return counts in March). Where a books line was moved to another return period in the Loader, that period is used to compare it (column "Compared with return period"), and the change is in Audit.',
-        s: 'wrap',
-      },
-    ],
-    ...(meta.settings ?? []).map(t => ['Matching settings', { v: t, s: 'wrap' }] as C[]),
-    [],
-    [
-      { v: 'Files used', s: 'sec' },
-      { v: '', s: 'sec' },
-    ],
-    ...meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as C[]),
-    [],
-    [
-      { v: 'How to export each report', s: 'sec' },
-      { v: '', s: 'sec' },
-    ],
-    ...FLOW_GUIDE.flatMap(g => [
-      [
-        {
-          v: `${g.source === 'portal' ? 'GST portal' : g.source === 'tally' ? 'Tally' : g.source === 'zoho' ? 'Zoho Books' : 'Other'}: ${g.title}`,
-          s: 'bold',
-        },
-      ] as C[],
-      ...g.steps.map((s, i) => [`  ${i + 1}.`, { v: s, s: 'wrap' }] as C[]),
-      ...(g.note ? [['', { v: g.note, s: 'note' }] as C[]] : []),
-    ]),
+      `${g.source === 'portal' ? 'GST portal' : g.source === 'tally' ? 'Tally' : g.source === 'zoho' ? 'Zoho Books' : 'Other'}: ${g.title}`,
+      g.steps.map((x, i) => `${i + 1}. ${x}`).join('  ') + (g.note ? `  (${g.note})` : ''),
+    ] as [string, string],
+  ]);
+  const sections: Section[] = [
+    {
+      heading: 'What this workpaper does',
+      lines: [
+        [
+          'Purpose',
+          'Takes the GST ledgers in the books (ITC, output tax, cash ledger, interest / fees) and the portal Electronic Credit Ledger, Cash Ledger and Liability Register to the same flow: opening, movements, closing. Every difference is explained from the entries, journals are suggested, and the Closing sheet takes the books to the portal.',
+        ],
+        ['Start here', 'Summary, then Setup_Checks (fix these first), Year_Compare, ITC_3way, Journals and Closing.'],
+      ],
+    },
+    {
+      heading: 'How the figures are worked out',
+      lines: [
+        ['Books_Lines / Portal_Lines', 'Every line read from the files, with its flow row (column R), its effect on the balance (column P) and its Year_Compare movement. Nothing else feeds the statements.'],
+        ['Flow_Books / Flow_Portal', 'Each cell = SUMIFS of "Row amount" (column T) of the line sheet for that flow row code (column H of the flow sheet), tax head and "in period". Opening = SUMIFS over Balances.'],
+        ['Flow_Difference', 'Flow_Books minus Flow_Portal, cell by cell.'],
+        ['Year_Compare', 'One SUMIFS a cell over the "Year_Compare movement" column of the line sheets; month columns add the month as a condition.'],
+        ['Closing', 'Closing as per books (link to Flow_Books) + suggested journals (SUMIFS over Journals) − each remaining difference = closing as per portal (link to Flow_Portal). The Check row must be nil.'],
+        ['Cross_Checks', 'A − B for each pair (cash ledger vs liability paid in cash, credit ledger vs liability paid by ITC, ledgers vs GSTR-3B); "Check" when the difference is above ₹1.'],
+        ['Basis', 'Books by voucher date; portal entries by return period (the April filing of the March return counts in March). A books line moved to another return period in the Loader is compared in that period, and the change is in Audit.'],
+      ],
+    },
+    {
+      heading: 'Working with the tool',
+      lines: [
+        ['Change a classification', 'In the Loader (GST ledger flow tab), open a month in the year comparison, Show lines, Change, with a remark. Changes go to Audit.'],
+        ['Next time', 'Drop this saved workpaper into the Loader: it brings back its source files, the account types, balances and your changes. Drop a newer GL dump with it to replace the saved copy; portal ledgers stay as filed.'],
+        ['Annual return', 'This workpaper, with the Input Reco and Revenue reco workpapers, is what the Annual return tab builds GSTR-9 / 9C from.'],
+      ],
+    },
+    { heading: 'Settings used', lines: (meta.settings ?? []).map(t => ['Matching settings', t] as [string, string]) },
+    { heading: 'Files used', lines: meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as [string, string]) },
+    { heading: 'How to export each report', lines: guideLines },
+  ];
+  const info: SheetInfo[] = [
+    { name: 'Summary', role: 'Summary', about: 'Closing balances as per books and portal, what is not explained, the status of the checks, and each movement for the year.' },
+    { name: 'Setup_Checks', role: 'Working', about: 'Fix these first: a missing ledger, opening or flow row shows up as a difference everywhere else.' },
+    { name: 'Year_Compare', role: 'Working', about: 'Each movement for the year as per books and as per portal, the year-end cut-off and the month-wise difference.' },
+    { name: 'ITC_3way', role: 'Working', about: 'ITC as per books, GSTR-2B and GSTR-3B: books to 2B invoice by invoice, 2B to 3B month by month.' },
+    { name: 'ITC_Invoices', role: 'Working', about: 'The purchase invoices that differ between the books and GSTR-2B.' },
+    { name: 'Journals', role: 'Working', about: 'Suggested entries that bring the books in line with the portal (not posted).' },
+    { name: 'Closing', role: 'Working', about: 'Closing as per books + journals − each remaining difference = closing as per portal. Check must be nil.' },
+    { name: 'Flow_Books', role: 'Working', about: 'Opening, movements and closing from the books only (SUMIFS over Books_Lines).' },
+    { name: 'Flow_Portal', role: 'Working', about: 'The same rows from the portal ledgers only (SUMIFS over Portal_Lines).' },
+    { name: 'Flow_Difference', role: 'Working', about: 'Flow_Books minus Flow_Portal, row by row.' },
+    { name: 'Cross_Checks', role: 'Working', about: 'The portal ledgers against each other and against GSTR-3B.' },
+    { name: 'Month_wise', role: 'Working', about: 'Books, portal and difference for each flow row, head and month.' },
+    { name: 'Books_Lines', role: 'Source data', about: 'Every books GST ledger line with its classification.' },
+    { name: 'Portal_Lines', role: 'Source data', about: 'Every portal ledger line with its classification.' },
+    { name: 'Balances', role: 'Source data', about: 'Opening balances: entered, printed in the files, or carried from entries before the period.' },
+    { name: 'Audit', role: 'Your input', about: 'Every change made in the Loader, with its remark.' },
   ];
   const sheets: SheetSpec[] = [
-    { name: 'Read Me', rows: rm, widths: [28, 120] },
+    indexSheet(front, info),
+    instructionsSheet(front, sections),
+    { name: 'Summary', rows: sm, widths: [46, 16, 16, 18, 16, 16, 70], freeze: { row: 4 }, tab: '2C388E' },
     { name: 'Setup_Checks', rows: su, widths: [12, 90, 80], freeze: { row: BL_H } },
     {
       name: 'Year_Compare',
@@ -814,16 +899,16 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
     {
       name: 'Books_Lines',
       rows: books,
-      widths: [10, 26, 6, 11, 8, 12, 8, 14, 14, 30, 26, 22, 7, 13, 13, 13, 6, 14, 30, 13, 40, 40],
+      widths: [10, 26, 6, 11, 8, 12, 8, 14, 14, 30, 26, 22, 7, 13, 13, 13, 6, 14, 30, 13, 40, 40, 34],
       freeze: { row: BL_H, col: 1 },
-      filter: { row: BL_H, cols: 22 },
+      filter: { row: BL_H, cols: 23 },
     },
     {
       name: 'Portal_Lines',
       rows: portal,
-      widths: [10, 26, 26, 6, 11, 20, 10, 10, 8, 32, 6, 8, 7, 9, 13, 13, 6, 14, 30, 13],
+      widths: [10, 26, 26, 6, 11, 20, 10, 10, 8, 32, 6, 8, 7, 9, 13, 13, 6, 14, 30, 13, 34],
       freeze: { row: BL_H, col: 1 },
-      filter: { row: BL_H, cols: 20 },
+      filter: { row: BL_H, cols: 21 },
     },
     { name: 'Balances', rows: bal, widths: [8, 6, 8, 34, 50, 18, 16], freeze: { row: BL_H } },
     { name: 'Audit', rows: au, widths: [18, 26, 40, 24, 24, 60], freeze: { row: BL_H } },

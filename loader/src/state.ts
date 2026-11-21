@@ -111,6 +111,7 @@ function sheetXml(note: string, parts: string[]) {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>${cell(1, note)}${parts.map((p, i) => cell(i + 2, p)).join('')}</sheetData></worksheet>`;
 }
 
+const R_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 /** add (or replace) the two hidden sheets in a finished .xlsx */
 export async function addStateSheets(bytes: Uint8Array, pack: { state: SavedState; files: PackFile[] }): Promise<Uint8Array> {
   const z = await JSZip.loadAsync(bytes);
@@ -154,7 +155,12 @@ export async function addStateSheets(bytes: Uint8Array, pack: { state: SavedStat
     while (z.file(`xl/worksheets/jj${fn}.xml`)) fn++;
     const path = `worksheets/jj${fn}.xml`;
     z.file('xl/' + path, xml);
-    wb = wb.replace('</sheets>', `<sheet name="${name}" sheetId="${sid}" state="hidden" r:id="${rid}"/></sheets>`);
+    // openpyxl templates declare xmlns:r on each <sheet>, not on <workbook>: declare it on the new one too, or Excel
+    // reports the file as damaged (the r: prefix would be undefined)
+    wb = wb.replace(
+      '</sheets>',
+      `<sheet xmlns:r="${R_NS}" name="${name}" sheetId="${sid}" state="hidden" r:id="${rid}"/></sheets>`,
+    );
     rels = rels.replace(
       '</Relationships>',
       `<Relationship Id="${rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${path}"/></Relationships>`,
