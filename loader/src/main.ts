@@ -58,7 +58,7 @@ const HERO: Record<Tab, [string, string, string]> = {
   annual: [
     'Annual return <em>loader</em>',
     'GSTR-1, 2B, 3B and the registers into the GSTR-9 / 9C workbook, and the finished workbook back into the GSTR-9 upload JSON.',
-    'GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Nov) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it',
+    'GSTR-1 JSON / ZIP (previous, current and next FY) · GSTR-2B JSON (this FY + next FY Apr–Oct) · GSTR-3B PDFs · portal GSTR-9 JSON · sales / purchase registers (.xlsx / .csv, any format) · optionally your existing workbook (.xlsx) to refresh it',
   ],
   flow: [
     'GST <em>ledger flow</em>',
@@ -251,8 +251,8 @@ function renderCoverage() {
     { label: 'GSTR-3B', sub: fy, set: g3, fy, window: 12 },
     { label: 'GSTR-1', sub: fy, set: g1, fy, window: 12 },
     { label: 'GSTR-2B', sub: fy, set: g2, fy, window: 12 },
-    { label: 'GSTR-1', sub: `${ny} · Apr–Nov`, set: g1, fy: ny, window: 8 },
-    { label: 'GSTR-2B', sub: `${ny} · Apr–Nov`, set: g2, fy: ny, window: 8 },
+    { label: 'GSTR-1', sub: `${ny} · Apr–Oct`, set: g1, fy: ny, window: 7 },
+    { label: 'GSTR-2B', sub: `${ny} · Apr–Oct`, set: g2, fy: ny, window: 7 },
     { label: 'GSTR-1', sub: `${py} · optional`, set: g1, fy: py, window: 12, optional: true },
   ];
   const gaps: string[] = [];
