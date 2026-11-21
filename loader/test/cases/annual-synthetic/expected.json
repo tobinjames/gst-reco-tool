@@ -15,6 +15,7 @@
     "no": "Supplier Invoice No.",
     "party": "Particulars",
     "gstin": "GSTIN/UIN",
+    "dtype": "Voucher Type",
     "gross": "Gross Total",
     "cess": "Input Cess",
     "cgst": "Input CGST @ 9% + Input CGST @ 6%",
@@ -29,7 +30,8 @@
     "badDates": 0,
     "outsideFy": 0,
     "credit": 0,
-    "grossOff": 0
+    "grossOff": 0,
+    "dateFmt": "dmy"
    }
   }
  ],

@@ -153,6 +153,11 @@ export const PURCHASE_FIELDS: FieldDef[] = [
     syn: ['supply type', 'gst treatment', 'gst category', 'purchase type', 'reverse charge', 'type of supply'],
   },
   {
+    id: 'dtype',
+    label: 'Document type (purchase / debit note / return)',
+    syn: ['document type', 'voucher type', 'vch type', 'doc type', 'transaction type', 'type'],
+  },
+  {
     id: 'itctype',
     label: 'ITC type (inputs / capital goods / services)',
     syn: ['itc type', 'eligibility for itc', 'itc eligibility', 'input type', 'nature of expense'],
@@ -252,7 +257,10 @@ export async function readTable(name: string, bytes: Uint8Array): Promise<RegShe
     return [
       {
         name: 'CSV',
-        rows: rows.map(r => r.map(v => (v !== '' && /^-?[\d,]+(\.\d+)?$/.test(v.trim()) ? +v.replace(/,/g, '') : v))),
+        // numbers become numbers, except codes with leading zeros (invoice no. 000123 stays text)
+        rows: rows.map(r =>
+          r.map(v => (v !== '' && /^-?[\d,]+(\.\d+)?$/.test(v.trim()) && !/^-?0\d/.test(v.trim()) ? +v.replace(/,/g, '') : v)),
+        ),
       },
     ];
   }
@@ -422,7 +430,24 @@ const amt = (v: any) => {
 // GSTN REGEX_1 (normal, composition, ISD): the 14th character is usually Z, but GSTN also allows 1-9 and A-J
 const GSTIN_RE = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z][Z1-9A-J][0-9A-Z]$/;
 const MON3 = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-export function parseDate(v: any): string {
+/** day/month order of a date column written as text: 'mdy' only when some second part is above 12 and no first part is */
+export function dateOrder(values: any[]): 'dmy' | 'mdy' {
+  let dFirst = false,
+    mFirst = false;
+  for (const v of values) {
+    if (typeof v !== 'string') continue;
+    const m = v.trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})\b/);
+    if (!m) continue;
+    if (+m[1] > 12) dFirst = true;
+    if (+m[2] > 12) mFirst = true;
+  }
+  return mFirst && !dFirst ? 'mdy' : 'dmy';
+}
+export function parseDate(v: any, order: 'dmy' | 'mdy' = 'dmy'): string {
+  if (typeof v === 'string' && order === 'mdy') {
+    const m = v.trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})\b/);
+    if (m) v = `${m[2]}-${m[1]}-${m[3]}`;
+  }
   if (typeof v === 'string') {
     const m = v.trim().match(/^(\d{1,2})[-/ ]([A-Za-z]{3})[A-Za-z]*[-/ ,]*(\d{2,4})$/);
     if (m) {
@@ -500,6 +525,8 @@ export interface Normalised {
     credit: number;
     grossOff: number;
     grossOffEg: string[];
+    /** how text dates were read */
+    dateFmt?: 'dmy' | 'mdy';
   };
 }
 export function normalise(kind: RegKind, rows: any[][], headerRow: number, map: Mapping, d: RegDefaults, fy: string): Normalised {
@@ -517,7 +544,18 @@ export function normalise(kind: RegKind, rows: any[][], headerRow: number, map: 
     tcsCols = adjCol(/\btcs\b/);
   const out: any[][] = [];
   const docs = new Set<string>();
-  const st = { lines: 0, docs: 0, skipped: 0, badDates: 0, outsideFy: 0, credit: 0, grossOff: 0, grossOffEg: [] as string[] };
+  const st: Normalised['stats'] = {
+    lines: 0,
+    docs: 0,
+    skipped: 0,
+    badDates: 0,
+    outsideFy: 0,
+    credit: 0,
+    grossOff: 0,
+    grossOffEg: [] as string[],
+  };
+  const dateCol = colsOf(map.date)[0];
+  st.dateFmt = dateCol === undefined ? 'dmy' : dateOrder(rows.slice(headerRow + 1).map(r => r?.[dateCol]));
   for (const r of rows.slice(headerRow + 1)) {
     if (!r) continue;
     const no = String(get(r, 'no') ?? '').trim();
@@ -546,7 +584,7 @@ export function normalise(kind: RegKind, rows: any[][], headerRow: number, map: 
         if (st.grossOffEg.length < 3) st.grossOffEg.push(no);
       }
     }
-    const date = parseDate(get(r, 'date'));
+    const date = parseDate(get(r, 'date'), st.dateFmt);
     if (!/^\d{2}-\d{2}-\d{4}$/.test(date)) st.badDates++;
     else if (fyOfDate(date) !== fy) st.outsideFy++;
     const rawDt = String(get(r, 'dtype') ?? '').toLowerCase();
@@ -557,8 +595,13 @@ export function normalise(kind: RegKind, rows: any[][], headerRow: number, map: 
           ? 'DN'
           : 'INV';
     if (dt === 'INV' && tx < 0) dt = 'CN';
-    if (dt === 'CN') st.credit++;
+    // purchases: a debit note / purchase return / vendor credit in the buyer's books reduces ITC (supplier's credit
+    // note in 2B), so it is kept negative; Books_Purchase has no document-type column, the sign carries it
+    const purNote =
+      kind === 'purchases' && (dt !== 'INV' || /vendor credit|purchase return|rejection/.test(rawDt) || tx + c + s + i + cs < 0);
+    if (dt === 'CN' || purNote) st.credit++;
     [tx, c, s, i, cs] = [tx, c, s, i, cs].map(Math.abs);
+    if (purNote) [tx, c, s, i, cs] = [tx, c, s, i, cs].map(x => (x ? -x : 0));
     const gstin = String(get(r, 'gstin') ?? '')
       .trim()
       .toUpperCase();

@@ -5,6 +5,7 @@ import itcTemplateUrl from '../template/ITC_Recon_Template.xlsx?inline';
 import { InFile, buildItc, buildWorkbook, classify } from './build';
 import { linesFromItems, parse3b } from './gstr3b';
 import { esc, fyShift, inr, store } from './util';
+import { step, withProgress } from './progress';
 import { generate9 } from './gen9';
 import { Review } from './review';
 import { FlowTab } from './flow/ui';
@@ -315,9 +316,15 @@ function renderCoverage() {
 );
 
 async function addFiles(list: FileList | File[]) {
+  // copy the list now: the file input is cleared right after this call and its FileList with it
+  const all = Array.from(list);
+  await withProgress('Reading files…', () => addFilesNow(all));
+}
+async function addFilesNow(all: File[]) {
   $('status').textContent = 'Reading files…';
   let dup = 0;
-  for (const f of Array.from(list)) {
+  for (const [i, f] of all.entries()) {
+    await step(all.length > 1 ? `Reading file ${i + 1} of ${all.length}` : 'Reading the file', i / all.length, f.name);
     try {
       for (const x of await classify(f.name, new Uint8Array(await f.arrayBuffer()), parsePdf)) {
         // file names don't matter (the portal reuses names); identical content is skipped
@@ -331,8 +338,10 @@ async function addFiles(list: FileList | File[]) {
     } catch (e: any) {
       files.push({ name: f.name, kind: 'Unknown', note: e.message });
     }
-    render();
   }
+  // the tabs work everything out again from the files: once, after the last file
+  await step('Matching and working out the reconciliation…', undefined, `${files.length} file(s) loaded`);
+  render();
   if (dup) {
     $('status').textContent = `${dup} duplicate file(s) skipped`;
     return;
@@ -356,7 +365,8 @@ drop.ondrop = (e: DragEvent) => {
   if (e.dataTransfer?.files) addFiles(e.dataTransfer.files);
 };
 
-$('build').onclick = async () => {
+$('build').onclick = () => withProgress('Building the workbook…', buildNow);
+const buildNow = async () => {
   $('build').disabled = true;
   $('status').textContent = 'Building…';
   $('result').innerHTML = '';
@@ -647,7 +657,7 @@ function renderRegisters() {
         i === 0 && typeof v === 'number'
           ? new Date(Date.UTC(1899, 11, 30) + v * 86400000).toISOString().slice(0, 10).split('-').reverse().join('-')
           : (v ?? '');
-      prevHtml = `<p style="margin:6px 0">${n.stats.lines} lines → ${n.stats.docs} documents${n.stats.credit ? ` · ${n.stats.credit} credit-note lines` : ''}${n.stats.skipped ? ` · ${n.stats.skipped} rows skipped (no number / no amount / totals)` : ''}
+      prevHtml = `<p style="margin:6px 0">${n.stats.lines} lines → ${n.stats.docs} documents${n.stats.credit ? ` · ${n.stats.credit} credit / debit-note lines (taken as reductions)` : ''}${n.stats.dateFmt === 'mdy' ? ' · <b>dates read as month/day/year</b> (some days are above 12 in the second place)' : ''}${n.stats.skipped ? ` · ${n.stats.skipped} rows skipped (no number / no amount / totals)` : ''}
         ${n.stats.grossOff ? ` · <span class="warn-error">${n.stats.grossOff} documents where taxable + tax (+ round off) ≠ gross total, e.g. ${n.stats.grossOffEg.map(esc).join(', ')}: a ledger column is probably missing or mapped twice</span>` : ''}
         ${n.stats.badDates ? ` · <span class="warn-error">${n.stats.badDates} unreadable dates</span>` : ''}${n.stats.outsideFy ? ` · <span class="warn-warn">${n.stats.outsideFy} lines dated outside FY ${esc($('fy').value)}</span>` : ''}</p>
         <p class="muted" style="margin:4px 0">Totals: ${(st.kind === 'sales'

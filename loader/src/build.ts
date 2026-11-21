@@ -1,5 +1,6 @@
 // Orchestrates: classify input files → parse → write workbook
 import JSZip from 'jszip';
+import { step } from './progress';
 import { G1File, isGstr1, processGstr1 } from './gstr1';
 import { is2b, process2b } from './gstr2b';
 import { ThreeB } from './gstr3b';
@@ -250,6 +251,7 @@ export async function buildWorkbook(
 
   // ---- GSTR-1
   const g1 = files.filter(f => f.kind === 'GSTR-1').map(f => ({ name: f.name, json: f.json }) as G1File);
+  await step('Reading GSTR-1…', 0.1);
   const { rows: g1rows, hsn } = processGstr1(g1, fy, ny, warns);
   const keep = (n: number) => !!base && n === 0; // refreshing an existing workbook: leave sheets alone when no new files of that type
   if (!keep(g1.length)) await wb.writeRows('RAW_GSTR1', 6, g1rows.map(row));
@@ -359,6 +361,7 @@ export async function buildWorkbook(
 
   // ---- GSTR-2B
   const b2 = files.filter(f => f.kind === 'GSTR-2B').map(f => ({ name: f.name, json: f.json }));
+  await step('Reading GSTR-2B…', 0.3);
   const { rows: r2b, periods } = process2b(b2, fy, py, ny, warns);
   if (!keep(b2.length)) await wb.writeRows('RAW_2B', 6, r2b.map(row));
   const fmtM = (l: string[]) => l.map(m => m.slice(0, 2) + '/' + m.slice(2)).join(', ');
@@ -425,6 +428,7 @@ export async function buildWorkbook(
     if (bp.length && raw2b.length) {
       const notes: string[] = [];
       const dp = extra.decisions?.purchases;
+      await step('Matching purchases with GSTR-2B…', 0.5, `${bp.length} books lines`);
       const pr = reconPurchases(
         bp,
         raw2b,
@@ -450,6 +454,7 @@ export async function buildWorkbook(
     if (bs.length && raw1.length) {
       const notes: string[] = [];
       const ds = extra.decisions?.sales;
+      await step('Matching sales with GSTR-1…', 0.65, `${bs.length} books lines`);
       const sr = reconSales(
         bs,
         raw1,
@@ -512,6 +517,7 @@ export async function buildWorkbook(
     'GSTR-2B documents': r2b.length,
     'Portal GSTR-9': p9.length ? 1 : 0,
   };
+  await step('Writing the Excel file…', 0.85);
   return { bytes: await wb.save(), warns, summary, counts, recon };
 }
 
@@ -587,6 +593,7 @@ export async function buildItc(
   let raw2b: any[][];
   let periods: string[];
   if (b2.length) {
+    await step('Reading GSTR-2B…', 0.2);
     const r = process2b(b2, fy, py, ny, warns);
     raw2b = r.rows.map(row);
     periods = r.periods;
@@ -611,6 +618,7 @@ export async function buildItc(
     const notes: string[] = [];
     const mo = extra.match ?? DEFAULT_MATCH,
       dp = extra.decisions?.purchases;
+    await step('Matching purchases with GSTR-2B…', 0.45);
     const pr = reconPurchases(
       bp,
       raw2b,
@@ -700,6 +708,7 @@ export async function buildItc(
     C7: fy,
     C9: new Date().toISOString().slice(0, 16).replace('T', ' '),
   });
+  await step('Writing the Excel file…', 0.85);
   return { bytes: await wb.save(), warns, recon, periods, position };
 }
 

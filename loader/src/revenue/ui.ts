@@ -1,11 +1,12 @@
 // Revenue reco tab: books source (sales register, else revenue ledgers from a GL dump), dashboard, the two statements,
 // every entry with filters and reasons (one by one or in bulk), and the workbook.
 import type { InFile } from '../build';
+import { withProgress } from '../progress';
 import { processGstr1 } from '../gstr1';
 import type { MatchOptions } from '../recon';
 import { Reader } from '../xlsx';
 import { readRows } from '../integrity';
-import { RawRow, esc, fyShift, inr, r2, store } from '../util';
+import { RawRow, Warn, esc, fyShift, inr, r2, store } from '../util';
 import {
   Item,
   REASON,
@@ -91,6 +92,8 @@ export class RevenueTab {
   private res: RevResult | null = null;
   private gl: GlResult | null = null;
   private g1raw: RawRow[] = [];
+  /** GSTR-1 files left out (the same return loaded twice) */
+  private g1warns: Warn[] = [];
   private bookRows: any[][] = [];
   private source: 'register' | 'gl' | 'none' = 'none';
   private f: Filters = NOF();
@@ -169,7 +172,7 @@ export class RevenueTab {
               g1f.map(f => ({ name: f.name, json: f.json })),
               c.fy,
               fyShift(c.fy, 1),
-              [],
+              (this.g1warns = []),
             ).rows
           : [];
       } catch (e: any) {
@@ -628,6 +631,10 @@ export class RevenueTab {
       ? `<ul class="warns">${r.checks.map(x => `<li class="warn-${x.level}">${esc(x.msg)}</li>`).join('')}${r.notes.map(n => `<li class="warn-warn">${esc(n)}</li>`).join('')}</ul>`
       : '';
     box.innerHTML =
+      this.g1warns
+        .filter(w => w.level === 'error')
+        .map(w => `<p class="warn-error"><b>${esc(w.file)}:</b> ${esc(w.msg)}</p>`)
+        .join('') +
       checks +
       `<div class="rv-bar"><div class="seg"><button class="${s ? '' : 'on'}" data-side="0">Taxable value</button><button class="${s ? 'on' : ''}" data-side="1">Tax</button></div></div>` +
       kpis +
@@ -878,7 +885,10 @@ export class RevenueTab {
   }
 
   // ---------- workbook
-  private async build() {
+  private build() {
+    return withProgress('Building the workbook…', () => this.buildInner());
+  }
+  private async buildInner() {
     const c = this.ctx();
     const r = this.res;
     if (!r) return;
