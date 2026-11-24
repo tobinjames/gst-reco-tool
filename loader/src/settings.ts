@@ -454,7 +454,7 @@ export class SettingsCard {
     this.rendering = true;
     this.box.innerHTML = `<details class="rv-set" ${open ? 'open' : ''}><summary><b>${isDefault ? 'Standard settings' : 'Your settings'}</b> <span class="muted">${esc(lines.join(' · '))}</span></summary>
       <div class="rv-set-in">${DEFS[tab].map(section).join('')}
-      <div class="row" style="justify-content:space-between"><span class="muted">Saved in this browser for the ${tab === 'itc' ? 'Input Reco' : tab === 'annual' ? 'Annual return' : tab === 'flow' ? 'GST ledger flow' : 'Revenue reco'} tab, written to the workbook's Read Me, and saved in the workbook so dropping it back in restores them.</span>
+      <div class="row" style="justify-content:space-between"><span class="muted">Saved in this browser for the ${tab === 'itc' ? 'Input Reco' : tab === 'annual' ? 'Annual return' : tab === 'flow' ? 'GST ledger flow' : 'Revenue reco'} tab, written to the workbook's Instructions sheet, and saved in the workbook so dropping it back in restores them.</span>
       ${isDefault ? '' : '<button class="small ghost" data-setreset>Back to standard settings</button>'}</div></div></details>`;
     this.rendering = false;
     const q = (sel: string) => this.box.querySelectorAll(sel) as NodeListOf<any>;
