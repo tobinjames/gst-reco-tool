@@ -11,6 +11,7 @@ import { Review } from './review';
 import { FlowTab } from './flow/ui';
 import { RevenueTab } from './revenue/ui';
 import { SettingsCard } from './settings';
+import { closeHelp, initHelp } from './help';
 import { Restored, addStateSheets, applyState, packState, readSavedFiles, setStateProvider, undoState } from './state';
 import { Reader } from './xlsx';
 import { applyAliases, nameKey, supplierSuggestions, suppliersFrom2B } from './suppliers';
@@ -76,10 +77,13 @@ const HERO: Record<Tab, [string, string, string]> = {
     'Portal Electronic Credit Ledger, Cash Ledger and Liability Register (CSV / Excel) · GST ledgers from Tally, Zoho or any software, one by one or as a full GL dump (.xlsx / .csv) · optionally GSTR-3B PDFs for the 3B checks · or just your saved flow workbook: it brings back its files and choices',
   ],
 };
+/** the manual's section for each tab */
+const HELP_SECTION: Record<Tab, string> = { itc: 'h-itc', flow: 'h-flow', revenue: 'h-rev', annual: 'h-annual' };
 /** the mode the reconciliation code works in (the flow tab has no matching review) */
 const mode = (): Mode => (tab === 'itc' ? 'itc' : 'annual');
 function setTab(t: Tab) {
   tab = t;
+  closeHelp();
   try {
     localStorage.setItem('jjmode', t);
   } catch {
@@ -101,6 +105,7 @@ function setTab(t: Tab) {
   });
   $('heroT').innerHTML = HERO[t][0];
   $('heroP').textContent = HERO[t][1];
+  $('heroHelp').setAttribute('href', '#help/' + HELP_SECTION[t]);
   $('dropHint').textContent = HERO[t][2];
   $('build').textContent = t === 'itc' ? 'Build ITC reconciliation' : 'Build workbook';
   $('result').innerHTML = '';
@@ -1186,3 +1191,8 @@ setStateProvider(t => {
 });
 
 setTab(tab);
+initHelp();
+// leaving the manual with its own button: show the tab again as it was
+window.addEventListener('jj-help-closed', () =>
+  document.querySelectorAll('button.tab').forEach((b: any) => b.classList.toggle('on', b.dataset.tab === tab)),
+);

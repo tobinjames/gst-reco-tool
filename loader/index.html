@@ -1242,6 +1242,227 @@
       #status {
         font-size: 13.5px;
       }
+
+      /* help & guide */
+      .helpbtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font:
+          500 13px/1 Onest,
+          system-ui,
+          sans-serif;
+        color: var(--brand);
+        background: var(--tint);
+        border: 1px solid var(--brand-100);
+        border-radius: 999px;
+        padding: 8px 14px;
+        cursor: pointer;
+      }
+      .helpbtn:hover {
+        background: var(--brand-100);
+      }
+      body.helping .helpbtn {
+        background: var(--brand);
+        color: #fff;
+      }
+      .helpbtn .gq {
+        display: inline-grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: var(--brand);
+        color: #fff;
+        font-size: 11px;
+      }
+      body.helping .helpbtn .gq {
+        background: #fff;
+        color: var(--brand);
+      }
+      .herohelp {
+        margin: 6px 0 0;
+        font-size: 13.5px;
+      }
+      .herohelp a {
+        color: var(--brand);
+        font-weight: 500;
+        text-decoration: none;
+      }
+      .herohelp a:hover {
+        text-decoration: underline;
+      }
+      #helpview {
+        display: none;
+      }
+      body.helping #helpview {
+        display: block;
+      }
+      body.helping .hero,
+      body.helping main {
+        display: none;
+      }
+      .hp-wrap {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 26px 24px 60px;
+        display: grid;
+        grid-template-columns: 230px minmax(0, 1fr);
+        gap: 28px;
+        align-items: start;
+      }
+      .hp-nav {
+        position: sticky;
+        top: 138px;
+        display: grid;
+        gap: 2px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--r);
+        padding: 12px;
+        box-shadow: var(--shadow);
+      }
+      .hp-nav > b {
+        padding: 4px 10px 8px;
+        color: var(--strong);
+        font-weight: 600;
+      }
+      .hp-nav a {
+        padding: 7px 10px;
+        border-radius: var(--r-sm);
+        color: var(--text);
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .hp-nav a:hover {
+        background: var(--tint);
+      }
+      .hp-nav a.on {
+        background: var(--brand);
+        color: #fff;
+      }
+      .hp-close {
+        margin-top: 8px;
+        font:
+          500 13px Onest,
+          system-ui,
+          sans-serif;
+        color: var(--brand);
+        background: none;
+        border: 1px solid var(--line-2);
+        border-radius: var(--r-sm);
+        padding: 8px;
+        cursor: pointer;
+      }
+      .hp-body section {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: var(--r);
+        box-shadow: var(--shadow);
+        padding: 22px 28px 14px;
+        margin-bottom: 18px;
+        scroll-margin-top: 150px;
+      }
+      .hp-body h2 {
+        margin: 0 0 10px;
+        font-size: 21px;
+        color: var(--strong);
+        letter-spacing: -0.01em;
+      }
+      .hp-body h3 {
+        margin: 20px 0 6px;
+        font-size: 15.5px;
+        color: var(--brand);
+      }
+      .hp-body h4 {
+        margin: 16px 0 4px;
+        font-size: 14px;
+        color: var(--strong);
+      }
+      .hp-body li {
+        margin: 3px 0;
+      }
+      .hp-body table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 10px 0 14px;
+        font-size: 13.5px;
+      }
+      .hp-body th,
+      .hp-body td {
+        text-align: left;
+        vertical-align: top;
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .hp-body th {
+        background: var(--tint);
+        color: var(--strong);
+        font-weight: 600;
+      }
+      .hp-body a {
+        color: var(--brand);
+      }
+      .hp-body code {
+        background: var(--tint);
+        padding: 1px 6px;
+        border-radius: 5px;
+        font-size: 12.5px;
+      }
+      .hp-note {
+        color: var(--muted);
+        font-size: 13.5px;
+      }
+      .hp-item {
+        margin: 8px 0 12px;
+        padding: 10px 14px;
+        background: var(--bg);
+        border-radius: var(--r-sm);
+      }
+      .hp-item ol {
+        margin: 4px 0 0;
+      }
+      .hp-body dt {
+        font-weight: 600;
+        color: var(--strong);
+        margin-top: 12px;
+      }
+      .hp-body dd {
+        margin: 2px 0 0;
+      }
+      @media (max-width: 800px) {
+        .hp-wrap {
+          grid-template-columns: 1fr;
+          padding: 16px;
+        }
+        .hp-nav {
+          position: static;
+        }
+        .hp-body section {
+          padding: 16px;
+          min-width: 0;
+        }
+        .hp-body table {
+          display: block;
+          overflow-x: auto;
+        }
+        .hp-body {
+          min-width: 0;
+        }
+      }
+      @media print {
+        .top,
+        .hp-nav {
+          display: none !important;
+        }
+        .hp-wrap {
+          display: block;
+        }
+        .hp-body section {
+          box-shadow: none;
+          break-inside: auto;
+        }
+      }
       .card.offtab {
         display: none !important;
       }
@@ -1651,7 +1872,15 @@
         </svg>
         <div class="brandname"><b>GST Reco Loader</b><span>James &amp; James LLP · Taxation</span></div>
         <div class="spacer"></div>
-        <span class="pill v">v0.15</span>
+        <button
+          id="helpBtn"
+          class="helpbtn"
+          type="button"
+          title="How to use the tool, how each tab works, how to export the files"
+        >
+          <span class="gq">?</span> Help &amp; guide
+        </button>
+        <span class="pill v">v0.16</span>
         <span class="pill"
           ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
             <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -1671,7 +1900,9 @@
     <section class="hero">
       <h1 id="heroT">GST <em>reconciliation</em> &amp; annual return loader</h1>
       <p id="heroP"></p>
+      <p class="herohelp"><a id="heroHelp" href="#help">How this tab works and what to do →</a></p>
     </section>
+    <section id="helpview" aria-label="Help and guide"></section>
     <main>
       <section class="card" data-tabs="itc annual flow revenue">
         <h2><span class="num">1</span> Add files <span class="muted shared">shared by all tabs</span></h2>
