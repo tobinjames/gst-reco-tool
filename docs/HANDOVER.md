@@ -56,6 +56,9 @@ From `loader/`: `npm ci` once, then
 - Workbook template change: `python3 workbook/build_workbook.py` (or build_itc_template.py) from anywhere; it writes straight into loader/template and loader/src.
 - Release: the built HTML is not committed. Run the Release workflow from the Actions tab with a version (e.g. `v0.10`), or push that tag; .github/workflows/release.yml publishes a GitHub Release with GST_Reco_Loader_<tag>.html. Copies for Tobin also go to the project files (releases/).
 
+## Help & guide (v0.16)
+`loader/src/help.ts` is the in-app manual: a **Help & guide** button in the top bar (and a "How this tab works" link under each tab's title) opens a full-page view with a side menu: start here, shared steps, one section per tab (matching logic, reasons, workbook), matching settings, saving and reusing a workpaper, getting the files, FAQ. Deep links: `#help/h-itc`, `h-flow`, `h-rev`, `h-annual`, `h-settings`, `h-wp`, `h-files`. The export steps are rendered from `flow/guide.ts` and `revenue/guide.ts`, and the reasons table from `revenue/engine.ts`, the presets from `recon.ts`: when logic or menu paths change, update the prose in help.ts too.
+
 ## UI (v0.8)
 The loader page was restyled (rounded cards, step badges, sticky top bar, mode cards with icons) keeping #2C388E and Onest. The top bar carries the firm logo (loader/src/brand/logo-blue.svg, inlined into index.html; black and white versions alongside); the favicon is the logo's ampersand mark. Step 2 has a "Where do I get these files?" guide (tabs: GST portal, Tally Prime, Zoho Books, other software) in loader/index.html; menu paths are as of Nov 2026, so recheck them when the portal or software changes.
 
