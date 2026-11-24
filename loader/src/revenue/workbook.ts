@@ -46,6 +46,8 @@ export interface RevMeta {
   ledgers?: { name: string; cls: RevClass | null; dr: number; cr: number; lines: number }[];
   /** the Matching settings in use, in words */
   settings?: string[];
+  /** notes the preparer wrote on the steps */
+  notes?: [string, string][];
   /** books customers without a GSTIN and the GSTIN given to them, with the basis */
   customers?: { name: string; gstin: string; basis: string; detail: string }[];
 }
@@ -731,6 +733,7 @@ export async function revenueWorkbook(r: RevResult, meta: RevMeta): Promise<Uint
       ],
     },
     { heading: 'Settings used', lines: (meta.settings ?? []).map(t => ['Matching settings', t] as [string, string]) },
+    { heading: 'Notes by the preparer', lines: meta.notes ?? [] },
     {
       heading: 'Files used',
       lines: meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as [string, string]),

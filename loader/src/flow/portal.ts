@@ -90,7 +90,10 @@ const emptyAmt = () =>
 
 export function parsePortal(rows: any[][]): PortalLedger {
   const kind = portalKindOf(rows);
-  if (!kind) throw new Error('Not a GST portal ledger');
+  if (!kind)
+    throw new Error(
+      'This file does not look like a GST portal ledger (credit, cash or liability). Download it again from the GST portal, Services, Ledgers',
+    );
   const res: PortalLedger = { kind, gstin: '', legalName: '', from: '', to: '', lines: [], problems: [] };
   // meta: label in one cell, value in the next
   let hi = -1;

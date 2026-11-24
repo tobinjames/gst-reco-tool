@@ -102,7 +102,10 @@ export const looksLikeBooks = (rows: any[][]) => !!layoutOf(rows);
 
 export function parseBooks(name: string, rows: any[][], ledgerName?: string): BookFile {
   const lay = layoutOf(rows);
-  if (!lay) throw new Error('Not a ledger / GL export: needs Date, Account / Particulars and Debit / Credit (or Amount) columns');
+  if (!lay)
+    throw new Error(
+      'This file does not look like a ledger or GL export. It needs a Date column, an Account or Particulars column and Debit and Credit (or Amount) columns. Open it in Excel and check the header row',
+    );
   const { fmt, header, col } = lay;
   const out: BookFile = { name, format: fmt, lines: [], skipped: [], problems: [] };
   const skip = (reason: string) => {

@@ -12,6 +12,7 @@ import { FlowTab } from './flow/ui';
 import { RevenueTab } from './revenue/ui';
 import { Wizard, wizardOn } from './wizard';
 import { demoFiles } from './demo';
+import { initTableSearch } from './tablesearch';
 import { SettingsCard } from './settings';
 import { closeHelp, initHelp } from './help';
 import { Restored, addStateSheets, applyState, packState, readSavedFiles, setStateProvider, undoState } from './state';
@@ -158,6 +159,7 @@ const wiz = new Wizard({
     };
   },
   openTab: t => setTab(t),
+  summary: t => (t === 'flow' ? flow.summary() : t === 'revenue' ? revenue.summary() : review.summary()),
   demo: t => addFiles(demoFiles(t)),
 });
 if (WIZ) document.body.classList.add('wiz');
@@ -980,7 +982,9 @@ function registerRows(fy: string, lenient = false) {
     if (!st) continue;
     if (fieldsOf(st.kind).some(x => x.required && !isMapped(st.map[x.id]))) {
       if (lenient) continue;
-      throw new Error(`${f.name}: map the required columns first`);
+      throw new Error(
+        `${f.name}: choose which column holds the date, invoice number and amount (step Client & year, Map register columns), then try again`,
+      );
     }
     const n = normalise(st.kind, st.sheets[st.sheet].rows, st.header, st.map, defaults(st), fy);
     (out[st.kind] ||= []).push(...n.rows);
@@ -1237,6 +1241,7 @@ setStateProvider(t => {
 
 setTab(tab);
 if (WIZ) {
+  initTableSearch();
   // start on the "what do you want to do" screen; a #help link still opens the manual
   if (!location.hash.startsWith('#help')) wiz.showHome();
   // saving a file (workbook, JSON) means nothing is lost on closing; new files or changes make it unsaved again

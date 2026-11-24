@@ -255,6 +255,20 @@ export class Review {
   }
 
   // ---------- filtering
+  /** one line for the status strip on the Review step */
+  summary(): { level: 'ok' | 'warn' | 'bad'; text: string } | null {
+    const all = this.items[this.side] || [];
+    if (!all.length) return null;
+    const n = (g: string) => all.filter(x => x.group === g).length;
+    const matched = all.filter(x => ['matched', 'other', 'manual'].includes(x.group)).length;
+    const b = n('books'),
+      r = n('ret'),
+      d = n('diff');
+    const what = this.side === 'purchases' ? 'GSTR-2B' : 'GSTR-1';
+    const text = `${matched} matched · ${d} with a value difference · ${b} in books only · ${r} in ${what} only`;
+    return { level: b + r > 0 ? 'bad' : d > 0 ? 'warn' : 'ok', text };
+  }
+
   private filtered(): Item[] {
     const f = this.f[this.side],
       q = f.q.trim().toLowerCase();

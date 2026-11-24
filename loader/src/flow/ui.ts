@@ -46,6 +46,7 @@ import { esc, fyShift, inr, store } from '../util';
 import { FLOW_GUIDE } from './guide';
 import { readTable } from '../register';
 import { Settings, describe } from '../settings';
+import { collectNotes } from '../wizard';
 
 const fmt = (v: number) => (Math.abs(v) < 0.005 ? '–' : inr(v));
 const $ = (id: string) => document.getElementById(id)! as any;
@@ -140,6 +141,28 @@ export class FlowTab {
     return `<table class="cov">${row('Electronic Credit Ledger', has('credit'))}${row('Electronic Cash Ledger', has('cash'))}${row('Electronic Liability Register', has('liability'))}
       <tr><th class="cvl">Books ledgers</th><td class="cv ${books.length ? 'ok' : 'miss'} wide">${books.length ? `✓ ${books.length} file(s), ${books.reduce((s, b) => s + b.lines.length, 0)} lines` : '✕ GST ledgers or a GL dump from your accounting software'}</td></tr>
       <tr><th class="cvl">GSTR-3B<span>optional, for 3B checks</span></th><td class="cv ${threeB.length ? 'ok' : 'opt'} wide">${threeB.length ? `✓ ${threeB.length} month(s)` : '– optional'}</td></tr></table>`;
+  }
+
+  /** one line for the status strip on the Results step */
+  summary(): { level: 'ok' | 'warn' | 'bad'; text: string } | null {
+    if (!this.res || !this.year) return null;
+    const unx = this.year.closing
+      .flatMap(x => x.lines)
+      .filter(
+        l => l.kind === 'unexplained' && Object.values(l.amt as Record<string, number>).some(v => Math.abs(v) >= 0.5),
+      ).length;
+    const bad = this.res.checks.filter(c => !c.ok).length;
+    if (unx || bad)
+      return {
+        level: 'bad',
+        text: `${unx ? `${unx} difference(s) not explained` : ''}${unx && bad ? ' · ' : ''}${bad ? `${bad} cross-check(s) failed` : ''}. Open the Reconciliation and Cross-checks tabs.`,
+      };
+    if (this.res.warns.length)
+      return {
+        level: 'warn',
+        text: `Everything is explained, but there are ${this.res.warns.length} message(s) under Cross-checks.`,
+      };
+    return { level: 'ok', text: 'Every difference is explained and all cross-checks pass.' };
   }
 
   refresh() {
@@ -916,6 +939,7 @@ export class FlowTab {
         to: this.inp.to,
         builtAt: nowTxt(),
         audit: this.st.audit,
+        notes: collectNotes('flow', c.gstin, c.fy),
         year: this.year,
         itc: this.itc,
         settings: c.settings ? describe('flow', c.settings()) : undefined,

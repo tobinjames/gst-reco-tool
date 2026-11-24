@@ -230,10 +230,19 @@ const escH = (x: string) => x.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt
 const el = (id: string) => document.getElementById(id);
 export const noteKey = (tab: string, step: string, gstin: string, fy: string) => `jjnote:${tab}:${step}:${gstin || '-'}:${fy}`;
 
+/** the notes written on the steps of a tab, as [label, text] lines for the workbook's Instructions sheet */
+export function collectNotes(tab: TabId, gstin: string, fy: string): [string, string][] {
+  return STEPS[tab]
+    .map(s => [`Note: ${s.title}`, String(store.get(noteKey(tab, s.id, gstin, fy)) || '').trim()] as [string, string])
+    .filter(x => x[1]);
+}
+
 export interface Hooks {
   ctx: () => Ctx;
   /** open a tab (the page's own tab switch) */
   openTab: (t: TabId) => void;
+  /** status line for the Results step of a tab, if there is a result */
+  summary?: (t: TabId) => { level: 'ok' | 'warn' | 'bad'; text: string } | null;
   /** load the demo files of a tab */
   demo: (t: TabId) => void;
 }
@@ -292,6 +301,11 @@ export class Wizard {
         ? ''
         : '';
     return `<h2>What do you want to do?</h2><p class="muted">Pick one. The page then takes you through it one step at a time: add files, check settings, review, download.</p><div class="home-grid">${cards}</div>${rec}<p class="muted">New here? Open <b>Help &amp; guide</b> at the top, or practise with demo files on the first step of any tab.</p>`;
+  }
+  private stripHtml(): string {
+    const s = this.h.summary?.(this.tab);
+    if (!s) return '';
+    return `<div class="wiz-strip ${s.level}"><span class="dot"></span><span><b>${s.level === 'ok' ? 'All clear' : s.level === 'warn' ? 'Check these' : 'Needs attention'}:</b> ${escH(s.text)}</span></div>`;
   }
   private checklistHtml(c: Ctx): string {
     const cnt = c.count || {};
@@ -375,6 +389,7 @@ export class Wizard {
       `</ol><div class="wiz-head"><div><b>Step ${cur + 1} of ${steps.length} · ${st.title}</b><p>${st.hint} <a href="#help/${helpId}">Need help with this step?</a></p></div>` +
       `<div class="wiz-acts"><button type="button" class="wiz-add" id="wizAdd">＋ Add files <span>${c.nFiles}</span></button><button type="button" class="link" id="wizHome">⌂ Start</button></div></div>` +
       (st.id === 'files' ? this.checklistHtml(c) : '') +
+      (st.id === 'review' ? this.stripHtml() : '') +
       (sub.length
         ? `<div class="wiz-sub">${[...st.cards, ...sub]
             .filter(id => sub.includes(id))

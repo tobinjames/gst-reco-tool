@@ -1602,6 +1602,51 @@
         font-size: 13px;
       }
       /* wizard extras */
+      .wiz-strip {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin-top: 12px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        border: 1px solid;
+      }
+      .wiz-strip .dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .wiz-strip.ok {
+        background: #ecfdf3;
+        border-color: #86efac;
+      }
+      .wiz-strip.ok .dot {
+        background: #16a34a;
+      }
+      .wiz-strip.warn {
+        background: #fffbeb;
+        border-color: #fcd34d;
+      }
+      .wiz-strip.warn .dot {
+        background: #d97706;
+      }
+      .wiz-strip.bad {
+        background: #fef2f2;
+        border-color: #fca5a5;
+      }
+      .wiz-strip.bad .dot {
+        background: #dc2626;
+      }
+      .tq {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin: 8px 0;
+      }
+      .tq input {
+        max-width: 320px;
+      }
       .wizhomebox {
         display: none;
       }
@@ -2159,7 +2204,7 @@
         >
           <span class="gq">?</span> Help &amp; guide
         </button>
-        <span class="pill v">v0.18</span>
+        <span class="pill v">v0.19</span>
         <span class="pill"
           ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
             <rect x="5" y="11" width="14" height="10" rx="2" />
