@@ -127,7 +127,15 @@ async function classifyInner(
         },
       ];
     } catch (e: any) {
-      return [{ name, kind: 'Unknown', note: 'PDF could not be read: ' + e.message }];
+      return [
+        {
+          name,
+          kind: 'Unknown',
+          note:
+            'This PDF could not be read. Download the GSTR-3B again from the GST portal (do not scan or print-to-PDF it). Detail: ' +
+            e.message,
+        },
+      ];
     }
   }
   if (lower.endsWith('.xlsx') || lower.endsWith('.csv')) {
@@ -148,7 +156,13 @@ async function classifyInner(
             saved ? 'GST ledger flow workbook' : 'GST ledger flow workbook from an older version: nothing to read back',
           );
       } catch {
-        return [{ name, kind: 'Unknown', note: 'Could not open the Excel file' }];
+        return [
+          {
+            name,
+            kind: 'Unknown',
+            note: 'This Excel file could not be opened. Open it in Excel, save it as .xlsx and add it again (password-protected files are not supported)',
+          },
+        ];
       }
     }
     // GST portal ledgers and books ledgers / GL dumps (for the GST ledger flow tab); anything else is a register to map
@@ -206,13 +220,26 @@ async function classifyInner(
     }
     return [{ name, kind: 'Register', bytes, note: 'map columns below' }];
   }
-  if (lower.endsWith('.xls')) return [{ name, kind: 'Unknown', note: 'Old .xls format: open in Excel and save as .xlsx' }];
+  if (lower.endsWith('.xls'))
+    return [
+      {
+        name,
+        kind: 'Unknown',
+        note: 'Old .xls format. Open it in Excel, choose Save As, Excel Workbook (.xlsx), then add the new file',
+      },
+    ];
   if (lower.endsWith('.json')) {
     let j: any;
     try {
       j = JSON.parse(new TextDecoder().decode(bytes).replace(/^﻿/, ''));
     } catch {
-      return [{ name, kind: 'Unknown', note: 'Not valid JSON' }];
+      return [
+        {
+          name,
+          kind: 'Unknown',
+          note: 'This is not a valid JSON file. Download it again from the GST portal and do not edit it',
+        },
+      ];
     }
     if (is2b(j)) {
       const d = j.data ?? j;
@@ -224,9 +251,17 @@ async function classifyInner(
     }
     if (isGstr1(j))
       return [{ name, kind: 'GSTR-1', json: j, gstin: j.gstin, period: String(j.fp), fy: fyOfPeriod(String(j.fp)) }];
-    return [{ name, kind: 'Unknown', note: 'JSON not recognised as GSTR-1 / GSTR-2B / GSTR-9' }];
+    return [
+      {
+        name,
+        kind: 'Unknown',
+        note: 'This JSON is not GSTR-1, GSTR-2B or GSTR-9. Check that you downloaded the right return from the GST portal',
+      },
+    ];
   }
-  return [{ name, kind: 'Unknown', note: 'Unsupported file type' }];
+  return [
+    { name, kind: 'Unknown', note: 'This file type is not supported. Use GST portal JSON, GSTR-3B PDF, Excel (.xlsx) or CSV' },
+  ];
 }
 
 const p9Present = (fs: InFile[]) => fs.some(f => f.kind === 'GSTR-9 (portal)');
@@ -271,7 +306,10 @@ export async function buildWorkbook(
         ];
       }
   }
-  if (!wb.has('RAW_GSTR1')) throw new Error(`${base?.name} is not a GST Annual Return Workbook`);
+  if (!wb.has('RAW_GSTR1'))
+    throw new Error(
+      `${base?.name} is not the GSTR-9 workbook made by this tool. Drop the workbook you downloaded from the Annual return tab`,
+    );
 
   // GSTIN consistency
   const gstins = new Set(files.filter(f => f.gstin).map(f => f.gstin));

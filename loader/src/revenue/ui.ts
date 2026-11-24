@@ -39,6 +39,7 @@ import {
 } from './customers';
 import { CustSettings, DEFAULT_CUST, describe, defaults } from '../settings';
 import { DEFAULT_MATCH } from '../recon';
+import { collectNotes } from '../wizard';
 
 const $ = (id: string) => document.getElementById(id)! as any;
 const fmt = (v: number) => (Math.abs(v) < 0.005 ? '–' : inr(v));
@@ -160,6 +161,22 @@ export class RevenueTab {
       ${row('GSTR-1', fy, ms, g1s)}${row('GSTR-3B', fy, ms, g3)}${row('GSTR-1', `${ny} · Apr–Oct, optional`, nyMs, g1s, true)}
       <tr><th class="cvl">Books</th><td colspan="13" class="cv ${regs || books ? 'ok' : 'miss'} wide">${regs ? `✓ sales register: ${regs} file(s)` : books ? `✓ day book / GL dump: ${books} file(s) (no sales register)` : '✕ sales register (preferred), or a day book / GL dump'}</td></tr>
       <tr><th class="cvl">Customer list<span>optional</span></th><td colspan="13" class="cv ${cl ? 'ok' : 'opt'} wide">${cl ? `✓ ${cl} customers with GSTIN` : '– name + GSTIN of customers: helps when the books have no GSTIN'}</td></tr></table>`;
+  }
+
+  /** one line for the status strip on the Results step */
+  summary(): { level: 'ok' | 'warn' | 'bad'; text: string } | null {
+    const r = this.res;
+    if (!r) return null;
+    const unx = [...r.st1, ...r.st2].filter(l => l.kind === 'unexplained' && Math.abs(l.amt[0]) + Math.abs(l.amt[1]) >= 1).length;
+    const err = r.checks.filter(c => c.level === 'error').length;
+    const warn = r.checks.filter(c => c.level === 'warn').length;
+    if (unx || err)
+      return {
+        level: 'bad',
+        text: `${unx ? `${unx} statement(s) with an unexplained difference` : ''}${unx && err ? ' · ' : ''}${err ? `${err} error(s) in the checks` : ''}. Look at the two statements and the checks on the dashboard.`,
+      };
+    if (warn) return { level: 'warn', text: `All differences are explained, with ${warn} warning(s) on the dashboard.` };
+    return { level: 'ok', text: 'All differences are explained and the checks pass.' };
   }
 
   refresh() {
@@ -908,6 +925,7 @@ export class RevenueTab {
           this.source === 'register' ? 'Sales register' : this.source === 'gl' ? 'Day book / GL dump (revenue ledgers)' : 'None',
         files: c.files.filter(f => f.kind !== 'Unknown').map(f => ({ name: f.name, kind: f.kind, note: f.note || '' })),
         audit: this.st.audit,
+        notes: collectNotes('revenue', c.gstin, c.fy),
         builtAt: nowTxt(),
         g1: this.g1raw,
         threeB: c.files.filter(f => f.kind === 'GSTR-3B' && f.threeB).map(f => f.threeB!),

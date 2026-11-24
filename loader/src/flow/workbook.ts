@@ -30,6 +30,8 @@ export interface FlowMeta {
   itc: Itc3 | null;
   /** the Matching settings in use, in words */
   settings?: string[];
+  /** notes the preparer wrote on the steps */
+  notes?: [string, string][];
 }
 
 const HEADS_TXT: Record<HeadK, string> = { IGST: 'IGST', CGST: 'CGST', SGST: 'SGST', CESS: 'Cess', ALL: 'Not split by head' };
@@ -873,6 +875,7 @@ export async function flowWorkbook(r: Result, meta: FlowMeta): Promise<Uint8Arra
       ],
     },
     { heading: 'Settings used', lines: (meta.settings ?? []).map(t => ['Matching settings', t] as [string, string]) },
+    { heading: 'Notes by the preparer', lines: meta.notes ?? [] },
     {
       heading: 'Files used',
       lines: meta.files.map(f => [f.name, `${f.kind}${f.note ? ' · ' + f.note : ''}`] as [string, string]),

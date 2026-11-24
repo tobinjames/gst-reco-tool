@@ -141,7 +141,10 @@ export interface Gen9Result {
 
 export async function generate9(bytes: Uint8Array, template?: Uint8Array): Promise<Gen9Result> {
   const rd = await Reader.open(bytes);
-  if (!rd.has('4-5 Outward') || !rd.has('Basic')) throw new Error('This is not a GST Annual Return Workbook');
+  if (!rd.has('4-5 Outward') || !rd.has('Basic'))
+    throw new Error(
+      'This is not the GSTR-9 workbook made by this tool. Drop the workbook you downloaded from the Annual return tab, saved in Excel',
+    );
   const msgs: Msg[] = [];
   let uncalculated = 0;
   const num = async (sheet: string, ref: string) => {
