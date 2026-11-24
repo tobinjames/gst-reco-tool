@@ -11,6 +11,7 @@ import { Review } from './review';
 import { FlowTab } from './flow/ui';
 import { RevenueTab } from './revenue/ui';
 import { Wizard, wizardOn } from './wizard';
+import { demoFiles } from './demo';
 import { SettingsCard } from './settings';
 import { closeHelp, initHelp } from './help';
 import { Restored, addStateSheets, applyState, packState, readSavedFiles, setStateProvider, undoState } from './state';
@@ -114,7 +115,13 @@ function setTab(t: Tab) {
   render();
   if (WIZ) wiz.setTab(t);
 }
-document.querySelectorAll('button.tab').forEach((b: any) => (b.onclick = () => setTab(b.dataset.tab)));
+document.querySelectorAll('button.tab').forEach(
+  (b: any) =>
+    (b.onclick = () => {
+      if (WIZ) wiz.home = false;
+      setTab(b.dataset.tab);
+    }),
+);
 
 /** the client's GSTIN: as typed, else the most frequent one in the files */
 function clientGstin(): string {
@@ -137,14 +144,21 @@ const activeFiles = () => {
 };
 
 const WIZ = wizardOn();
-const wiz = new Wizard(() => {
-  const af = activeFiles();
-  return {
-    kinds: new Set(af.map(f => f.kind)),
-    hasWorkpaper: af.some(f => f.saved),
-    gstin: clientGstin(),
-    nFiles: af.length,
-  };
+const wiz = new Wizard({
+  ctx: () => {
+    const af = activeFiles();
+    const count: Record<string, number> = {};
+    for (const f of af) count[f.kind] = (count[f.kind] || 0) + 1;
+    return {
+      kinds: new Set(af.map(f => f.kind)),
+      hasWorkpaper: af.some(f => f.saved),
+      gstin: clientGstin(),
+      nFiles: af.length,
+      count,
+    };
+  },
+  openTab: t => setTab(t),
+  demo: t => addFiles(demoFiles(t)),
 });
 if (WIZ) document.body.classList.add('wiz');
 
@@ -405,6 +419,7 @@ async function addFilesNow(all: File[]) {
       replaced.push(`${old.name} → ${x.name}`);
     }
   }
+  wiz.saved = false;
   // the tabs work everything out again from the files: once, after the last file
   await step('Matching and working out the reconciliation…', undefined, `${files.length} file(s) loaded`);
   // a dropped workpaper opens its own tab, except on the Annual return tab, which is built from the other tabs' workpapers
@@ -1221,6 +1236,20 @@ setStateProvider(t => {
 });
 
 setTab(tab);
+if (WIZ) {
+  // start on the "what do you want to do" screen; a #help link still opens the manual
+  if (!location.hash.startsWith('#help')) wiz.showHome();
+  // saving a file (workbook, JSON) means nothing is lost on closing; new files or changes make it unsaved again
+  document.addEventListener('click', e => {
+    if ((e.target as HTMLElement).closest?.('a[download]')) wiz.saved = true;
+  });
+  window.addEventListener('beforeunload', e => {
+    if (!wiz.saved && files.length) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+}
 initHelp();
 // leaving the manual with its own button: show the tab again as it was
 window.addEventListener('jj-help-closed', () =>

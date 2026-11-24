@@ -1,3 +1,4 @@
+import { STEPS, noteKey } from './wizard';
 // Workpaper memory: every workbook the tool writes carries two hidden sheets, so that dropping the saved workpaper back in
 // (alone) brings everything back:
 //   _JJState  your settings and choices (matching settings, register column mappings, supplier / customer names, revenue
@@ -38,7 +39,7 @@ export interface SavedState {
 /** store keys of a tab for a client + year (besides the ones main.ts adds: register mappings, supplier names) */
 export function tabKeys(tab: TabId, gstin: string, fy: string): string[] {
   const g = gstin || '-';
-  const k = [`jjset:${tab}`];
+  const k = [`jjset:${tab}`, ...STEPS[tab].map(s => noteKey(tab, s.id, gstin, fy))];
   if (tab === 'flow') k.push(`jjflow:acc:${g}`, `jjflow:${g}:${fy}`);
   if (tab === 'revenue') k.push(`jjrev:${g}:${fy}`, `jjrev:cls:${g}`, `jjrev:cust:${g}`);
   return k;

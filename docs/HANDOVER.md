@@ -3,16 +3,19 @@
 James & James LLP · built 20 Nov 2026 · Loader v0.14 (saved workpapers bring back their files and settings, 21 Nov 2026), workbook template 2026.11.20-7
 
 ## What it is
+
 Two pieces:
+
 1. **GST_Annual_Return_Loader.html**: a single offline HTML page (Chrome / Edge; no install, no Excel 365 needed; files never leave the PC). It has three tabs (v0.9) that share one file pool; files of a GSTIN other than the client's are warned about and ignored in every tab:
-   - **Input Reco** (monthly ITC reconciliation): GSTR-2B JSON(s) for one or more months, plus purchase register(s) in any format (column mapping), produce *ITC_Recon_<GSTIN>_<period>.xlsx*. That workbook has Summary (ITC position and claimable ITC), Recon_Purchases, Recon_Suppliers, Month_wise, Books_Purchase and RAW_2B.
-   - **Annual return**: GSTR-1 JSON/ZIP (PY, CY, NY), GSTR-2B JSON (CY + NY Apr–Oct), GSTR-3B PDFs, the portal auto-drafted GSTR-9 JSON and registers produce *GSTR9_<GSTIN>_<FY>.xlsx*. Step 04 reads the finished, saved workbook back and produces the **GSTR-9 upload JSON**, with an edit check (formulas vs template, fingerprint + HMAC seal of imported data, audit list of adjustments).
-   - **GST ledger flow** (v0.9): the portal Electronic Credit Ledger, Cash Ledger and Liability Register (CSV / Excel) against the books GST ledgers (Tally voucher dump, Zoho detailed GL, or any single-ledger export with Date / Particulars / Debit / Credit). It shows the flow (opening, output tax, RCM, credit notes, ITC availed / reversed / reclaimed / set off / refunded, cash deposits and use, interest / late fee / penalty, closing) as per books, as per portal and the difference, explains every difference from the entries, runs cross-checks, and writes *GST_Flow_<GSTIN>_<FY>.xlsx*. See "GST ledger flow" below.
+   - **Input Reco** (monthly ITC reconciliation): GSTR-2B JSON(s) for one or more months, plus purchase register(s) in any format (column mapping), produce _ITC*Recon*<GSTIN>\_<period>.xlsx_. That workbook has Summary (ITC position and claimable ITC), Recon_Purchases, Recon_Suppliers, Month_wise, Books_Purchase and RAW_2B.
+   - **Annual return**: GSTR-1 JSON/ZIP (PY, CY, NY), GSTR-2B JSON (CY + NY Apr–Oct), GSTR-3B PDFs, the portal auto-drafted GSTR-9 JSON and registers produce _GSTR9*<GSTIN>*<FY>.xlsx_. Step 04 reads the finished, saved workbook back and produces the **GSTR-9 upload JSON**, with an edit check (formulas vs template, fingerprint + HMAC seal of imported data, audit list of adjustments).
+   - **GST ledger flow** (v0.9): the portal Electronic Credit Ledger, Cash Ledger and Liability Register (CSV / Excel) against the books GST ledgers (Tally voucher dump, Zoho detailed GL, or any single-ledger export with Date / Particulars / Debit / Credit). It shows the flow (opening, output tax, RCM, credit notes, ITC availed / reversed / reclaimed / set off / refunded, cash deposits and use, interest / late fee / penalty, closing) as per books, as per portal and the difference, explains every difference from the entries, runs cross-checks, and writes _GST*Flow*<GSTIN>\_<FY>.xlsx_. See "GST ledger flow" below.
 2. **GST_Annual_Return_Workbook.xlsx**: the macro-free template (Excel 2010+), embedded in the loader.
 
    - **Revenue reco** (v0.11): books vs GSTR-1 vs GSTR-3B for one FY, with a dashboard, two bank-reco style statements and the reason for each difference. See "Revenue reco" below.
 
 ## Source layout
+
 ```
 loader/                    Vite + TypeScript (no React), builds to one HTML via vite-plugin-singlefile
   src/main.ts              UI: modes, file drop, coverage grid, register mapping, build, JSON step
@@ -48,24 +51,35 @@ workbook/
   build_itc_template.py    generates ITC_Recon_Template.xlsx into loader/template (a trimmed copy of the recon-sheet code)
   masters.json             HSN / UQC / rate masters extracted from GSTN offline tool v2.2
 ```
+
 ## Working on it
+
 From `loader/`: `npm ci` once, then
+
 - `npm run check` before every PR: formatting, type check, all tests, build. GitHub runs the same check on each pull request (.github/workflows/ci.yml) and attaches the built HTML to the run.
 - `npm test` tests only; `npm run test:update` after an intended change to a real-file case's results (then read the expected.json diff).
 - `npm run format` tidies the code (Prettier); `npm run build` produces `dist/index.html`.
 - Workbook template change: `python3 workbook/build_workbook.py` (or build_itc_template.py) from anywhere; it writes straight into loader/template and loader/src.
-- Release: the built HTML is not committed. Run the Release workflow from the Actions tab with a version (e.g. `v0.10`), or push that tag; .github/workflows/release.yml publishes a GitHub Release with GST_Reco_Loader_<tag>.html. Copies for Tobin also go to the project files (releases/).
+- Release: the built HTML is not committed. Run the Release workflow from the Actions tab with a version (e.g. `v0.10`), or push that tag; .github/workflows/release.yml publishes a GitHub Release with GST*Reco_Loader*<tag>.html. Copies for Tobin also go to the project files (releases/).
 
 ## Help & guide (v0.16)
+
 `loader/src/help.ts` is the in-app manual: a **Help & guide** button in the top bar (and a "How this tab works" link under each tab's title) opens a full-page view with a side menu: start here, shared steps, one section per tab (matching logic, reasons, workbook), matching settings, saving and reusing a workpaper, getting the files, FAQ. Deep links: `#help/h-itc`, `h-flow`, `h-rev`, `h-annual`, `h-settings`, `h-wp`, `h-files`. The export steps are rendered from `flow/guide.ts` and `revenue/guide.ts`, and the reasons table from `revenue/engine.ts`, the presets from `recon.ts`: when logic or menu paths change, update the prose in help.ts too.
 
+## Wizard UI (v0.18)
+
+The page is a step-by-step wizard (`loader/src/wizard.ts`), the old stacked page is still available with `?ui=classic`. Each tab is a list of steps in `STEPS`; a step shows some of the existing cards (hidden with `.offstep`, card ids must stay in sync with `STEPS`) and, for results with several views, `sub` cards as sub-tabs. Next is disabled until `missing(ctx)` is null (plain-language reason shown). Features: start screen ("What do you want to do?" + last client), per-tab file checklist (`NEEDS`), "Try with demo files" (`src/demo.ts`, files in `src/demo/`, made-up company), "Add files" button on every step and drop anywhere, saved workpaper jumps to the Review/Results step, per-step notes (browser + workpaper keys `jjnote:`; not yet written to the workbook Read Me), warning on closing with unsaved work, sticky table headers. Not done: summary status strip, table search/filters, plain-language rewrite of engine messages, dark mode (declined).
+
 ## UI (v0.8)
+
 The loader page was restyled (rounded cards, step badges, sticky top bar, mode cards with icons) keeping #2C388E and Onest. The top bar carries the firm logo (loader/src/brand/logo-blue.svg, inlined into index.html; black and white versions alongside); the favicon is the logo's ampersand mark. Step 2 has a "Where do I get these files?" guide (tabs: GST portal, Tally Prime, Zoho Books, other software) in loader/index.html; menu paths are as of Nov 2026, so recheck them when the portal or software changes.
 
 ## UI (v0.9)
+
 Top-level tabs (Input Reco, Annual return, GST ledger flow) replace the mode cards. Add files and Confirm client & year are shared; the other cards carry `data-tabs` and are hidden on other tabs, and step numbers are renumbered per tab (sub-steps 1b / 1c). The last tab is remembered in the browser.
 
 ## GST ledger flow (v0.9, agreed with Tobin)
+
 - Single GSTIN, one FY with a month filter (From / To). Portal entries count by **return period** (liability register: the period in the ARN; credit / cash ledger: the return the entry belongs to), books by voucher date unless the user moves a line to another return period.
 - Books accounts: GST-looking ledgers are picked by name (rate-wise ledgers like Output CGST 9% add up under their head; value ledgers like "IGST Sales 12%" are not GST accounts); the user confirms the type and head of each. Non-accounting vouchers (orders, delivery / receipt notes, memorandum) are left out.
 - Balances: single-ledger exports and the portal's Opening Balance rows give balances; GL dumps don't, so the user enters openings (and closings to check against the trial balance). Entered balances go to the Audit sheet.
@@ -82,6 +96,7 @@ Top-level tabs (Input Reco, Annual return, GST ledger flow) replace the mode car
 - Real client samples were used only locally and are not in the repo.
 
 ## Revenue reco (v0.11, agreed with Tobin 21 Nov 2026)
+
 - Books source: the sales register (mapped under "Map register columns") when there is one; only without it, a day book / GL dump /
   detailed ledgers (flow/books.ts reader). Revenue ledgers are suggested by name (sales, other income; interest, dividends, forex =
   "not a supply"); the user sets each ledger's class (taxable, export, exempt, non-GST, not a supply, not revenue = ignore). Invoices are
@@ -103,7 +118,7 @@ Top-level tabs (Input Reco, Annual return, GST ledger flow) replace the mode car
   reason used, so books + reasons = GSTR-1 by construction; "Difference not explained" is the residual (nil unless excluded entries are
   also in GSTR-1). GSTR-1 → 3B: RCM supplies, advances (4F), months with no 3B, then per 3B table (3.1(a) incl. advances, (b), (c), (e),
   3.1.1(ii)).
-- Workbook Revenue_Reco_<GSTIN>_<FY>.xlsx: Read Me, Dashboard, Books_to_GSTR1, GSTR1_to_3B, Month_wise, B2C_Month, Month_3B, Rev_Items
+- Workbook Revenue*Reco*<GSTIN>\_<FY>.xlsx: Read Me, Dashboard, Books_to_GSTR1, GSTR1_to_3B, Month_wise, B2C_Month, Month_3B, Rev_Items
   (yellow columns Your reason / B2CS month / Remark with drop-downs; "Reason used" is a formula), G1_Rows, 3B_Rows, Books_Lines, Ledgers,
   Audit, Lists. Statements are SUMIFS over Rev_Items / G1_Rows / 3B_Rows, so reasons changed in Excel move the statement. Dropping the
   saved workbook with the same files reads the yellow columns back (by Id). Decisions are also kept in the browser per GSTIN + FY.
@@ -112,6 +127,7 @@ Top-level tabs (Input Reco, Annual return, GST ledger flow) replace the mode car
 - Not done: GSTR-1A, e-invoice / e-way bill data (agreed to leave out), multi-GSTIN, 3B JSON (PDFs only), HSN-wise comparison.
 
 ## Matching settings (v0.12, asked by Tobin 21 Nov 2026)
+
 - Every tab has a "Matching settings" step (src/settings.ts, card #setcard) after Confirm client & year and before any matching.
   Tab order is now Input Reco, GST ledger flow, Revenue reco, Annual return (last). Settings are kept in the browser per tab
   (`jjset:<tab>`; the old shared `jjmatch` seeds Input Reco and Annual return), each section shows an "In use" line, and the
@@ -129,7 +145,9 @@ Top-level tabs (Input Reco, Annual return, GST ledger flow) replace the mode car
   with a different amount is shown but never maps.
 
 ## Fixes from the independent review (v0.13, 21 Nov 2026)
+
 Review: project files reviews/GST_Reco_Tool_Review_v0.12.md. Tested by test/review.test.ts.
+
 - **2B amendments** (GSTN GSTR-2B FAQ 8: amendment tables carry the full revised values, only the summary is the difference):
   process2b() handles files in period order and links B2BA/ECOMA by `oinum`, CDNRA by `ontnum`, re-sent bills of entry
   (`isamd` Y) by BOE no. The original (or an earlier amendment) gets key '' and column S "Superseded by ..."
@@ -148,8 +166,10 @@ Review: project files reviews/GST_Reco_Tool_Review_v0.12.md. Tested by test/revi
   (once after the last file, not after each one), and every workbook build. step() waits for a paint, and does nothing in Node.
 
 ## Saved workpapers bring everything back (v0.14, asked by Tobin 21 Nov 2026)
+
 Tobin: the second time, the saved workpaper alone should be enough; returns and portal ledgers never change, only the
 books files (sales / purchase register, GL dump, customer list) may be replaced.
+
 - Every workbook the tool writes (ITC recon, GSTR-9, flow, revenue) gets two hidden sheets (src/state.ts `addStateSheets`):
   `_JJState` = JSON of the settings and choices (store keys: `jjset:<tab>` as in use, register mappings `jjmap:*` and
   register defaults `jjmapd:*` (not the claim year), this client's supplier names `jjalias` (names in its purchase register,
@@ -170,13 +190,15 @@ books files (sales / purchase register, GL dump, customer list) may be replaced.
 - The browser store keeps values in memory when localStorage is blocked, so a restore also works in a private window.
 
 ## Workpaper format and annual return from workpapers (v0.15, asked by Tobin 21 Nov 2026)
+
 - Every workpaper (ITC, Revenue reco, GST ledger flow, GSTR-9/9C) is Aptos, opens on an **Index** (cover, contents with links, how to read, colour key, Prepared/Reviewed sign-off), has one **Instructions** sheet, a **Summary** sheet, and a "Back to Index" link on each sheet. Python templates: workbook/jjfront.py; TS writer: src/wpfront.ts (heading, indexSheet, instructionsSheet).
 - Formulas are meant to be read without the tool: one SUMIFS per cell. ITC/annual Recon_Purchases has helper columns AD-AK (books tax, 2B tax, claimable per head = MIN on matched rows, claimable tax, books month: src/reconsheets.ts withHelpers); flow Books_Lines W / Portal_Lines U hold the Year_Compare movement label.
 - Annual return tab, recommended route: drop the saved Input Reco, Revenue reco and GST ledger flow workpapers. They bring their source files (state.ts), the Input Reco match codes/remarks carry to the annual Recon_Purchases (build.ts reconStateFor), its matching settings are copied to the annual tab, and the **Workpapers** sheet compares each workpaper's headline figures (src/annualwp.ts reads them; rows in src/wprows.json from build_workbook.py) with the GSTR-9 cells (difference + OK / Look at, counted on Summary). Direct from returns and registers still works, labelled not recommended. A flow workpaper from before v0.15 (no Summary) only gives a warning.
-- Fixed: ITC / GSTR-9 workbooks saved by v0.14 opened as damaged in Excel (hidden _JJ sheets used an undeclared r: prefix). ITC file name periods are sorted.
+- Fixed: ITC / GSTR-9 workbooks saved by v0.14 opened as damaged in Excel (hidden \_JJ sheets used an undeclared r: prefix). ITC file name periods are sorted.
 - scripts/annual_wp.ts <folder> <out.xlsx> builds an annual workbook from saved workpapers without the browser (registers are not mapped there).
 
 ## Key decisions (agreed with Tobin)
+
 - No macros and no Excel 365 functions (SUMIFS/INDEX/MATCH only). The browser does the parsing, because Power Query "From PDF" isn't available to every user.
 - Hosting: the single HTML on a shared drive works offline; optional Cloudflare Pages at gst.jjglobal.in behind Cloudflare Access.
 - Branding: James & James design system (#2C388E, Onest on the web page, Arial in Excel). Every sheet says "Prepared by James & James LLP".
@@ -187,6 +209,7 @@ books files (sales / purchase register, GL dump, customer list) may be replaced.
 - Matching order: manual codes, then invoice no. (punctuation ignored), digits, last digits/tail (amounts agree), GSTIN+date+amount, number+amount with GSTIN differing, supplier totals, then hints. Missing GSTIN is taken from 2B by supplier name or by invoice no. + amount. Zero-tax lines are not compared. Tolerance ₹1.
 
 ## Open items / next steps
+
 1. **Multi-column mapping** for Tally columnar registers: built in v0.8. Taxable value and each tax head (CGST/SGST/IGST/Cess) can take several columns, summed per row; columnar registers are recognised and the ledger columns pre-selected; Gross Total is checked against taxable + tax (allowing Round Off, TDS, TCS); unused amount columns are flagged. Tested only on a synthetic export (`npx tsx test/tally.ts`). **Still needed:** a real Tally columnar export (Supplier Invoice No./Date and GSTIN switched on) to confirm the header layout and ledger-name detection.
 2. **ITC ledger control total** in monthly mode (Input CGST/SGST/IGST/Cess debits vs registers loaded), and a **Source** column in Recon_Purchases (which file each invoice came from), to catch journals/expenses not exported.
 3. **GSTR-9C JSON** generation (structure in the GSTN 9C offline tool v2.9: gstr9cdata → audited_data → table5..table16, add_liab) and a trial-balance mapping for 9C Tables 5/12/14.

@@ -1601,6 +1601,147 @@
         color: #b45309;
         font-size: 13px;
       }
+      /* wizard extras */
+      .wizhomebox {
+        display: none;
+      }
+      body.wizhome .wizhomebox {
+        display: block;
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 28px 16px 60px;
+      }
+      body.wizhome .hero,
+      body.wizhome main,
+      body.wizhome .wizbar,
+      body.wizhome .wizfoot {
+        display: none !important;
+      }
+      .home-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+        margin: 18px 0;
+      }
+      .home-card {
+        text-align: left;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 20px;
+        background: #fff;
+        color: #222;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        cursor: pointer;
+        font: inherit;
+        box-shadow: var(--shadow);
+      }
+      .home-card:hover {
+        border-color: #2c388e;
+      }
+      .home-card b {
+        font-size: 18px;
+        color: #2c388e;
+      }
+      .home-card span {
+        color: #555;
+      }
+      .home-card em {
+        font-style: normal;
+        font-weight: 600;
+        color: #2c388e;
+        margin-top: auto;
+      }
+      .home-last {
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 20px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .wiz-acts {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .wiz-check {
+        margin: 12px 0 0;
+        padding: 14px 18px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+      }
+      .wiz-check ul {
+        list-style: none;
+        margin: 8px 0;
+        padding: 0;
+        display: grid;
+        gap: 8px;
+      }
+      .wiz-check li {
+        display: flex;
+        gap: 10px;
+      }
+      .wiz-check .ck {
+        font-weight: 700;
+      }
+      .wiz-check li.ok .ck {
+        color: #15803d;
+      }
+      .wiz-check li.miss .ck {
+        color: #b91c1c;
+      }
+      .wiz-sub {
+        display: flex;
+        gap: 6px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+      .wiz-sub button {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: #2c388e;
+        border-radius: 8px;
+        padding: 8px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      .wiz-sub button.on {
+        background: #2c388e;
+        color: #fff;
+        border-color: #2c388e;
+      }
+      .wiz-note summary {
+        cursor: pointer;
+        color: #2c388e;
+        font-weight: 600;
+      }
+      .wiz-note textarea {
+        width: 320px;
+        max-width: 80vw;
+        font: inherit;
+      }
+      .wizfoot {
+        flex-wrap: wrap;
+      }
+      /* big review tables: header stays in view while scrolling */
+      body.wiz .tablewrap {
+        max-height: 70vh;
+        overflow: auto;
+      }
+      body.wiz .tablewrap thead th,
+      body.wiz .tablewrap tr:first-child th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f3f4fa;
+      }
       .card.offtab {
         display: none !important;
       }
@@ -2018,7 +2159,7 @@
         >
           <span class="gq">?</span> Help &amp; guide
         </button>
-        <span class="pill v">v0.16</span>
+        <span class="pill v">v0.18</span>
         <span class="pill"
           ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
             <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -2041,6 +2182,7 @@
       <p class="herohelp"><a id="heroHelp" href="#help">How this tab works and what to do →</a></p>
     </section>
     <section id="helpview" aria-label="Help and guide"></section>
+    <section id="wizhome" class="wizhomebox"></section>
     <div id="wizbar" class="wizbar"></div>
     <main>
       <section class="card" id="c-files" data-tabs="itc annual flow revenue">
