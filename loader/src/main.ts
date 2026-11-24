@@ -8,6 +8,9 @@ import { esc, fyShift, inr, store } from './util';
 import { step, withProgress } from './progress';
 import { generate9 } from './gen9';
 import { Review } from './review';
+import { meter, statusLine, tile } from './dash';
+import { workpaperCells, wpTabOf } from './annualwp';
+import WPROW from './wprows.json';
 import { FlowTab } from './flow/ui';
 import { RevenueTab } from './revenue/ui';
 import { SettingsCard } from './settings';
@@ -203,6 +206,7 @@ function render() {
   if (l && !$('legal').dataset.touched) $('legal').value = l;
   $('build').disabled = !activeFiles().some(f => f.kind !== 'Unknown' && f.kind !== 'Portal ledger' && f.kind !== 'Books ledger');
   renderCoverage();
+  renderDash();
   renderRegisters();
   flow.refresh();
   revenue.refresh();
@@ -340,11 +344,116 @@ function renderCoverage() {
       return;
     }
     renderCoverage();
+    renderDash();
     renderRegisters();
     flow.refresh();
     revenue.refresh();
   }),
 );
+
+// ---------- "At a glance" cards of the Input Reco and Annual return tabs (flow and revenue draw their own)
+let lastBuild: { warns: { level: string }[]; name: string } | null = null;
+let dashSeq = 0;
+function renderDash() {
+  const card = $('dash-itc');
+  card.style.display = tab === 'itc' && review.hasItems() ? '' : 'none';
+  if (tab === 'itc') $('itcDash').innerHTML = review.dashHtml();
+  if (tab === 'annual') void renderAnnualDash();
+}
+async function renderAnnualDash() {
+  const seq = ++dashSeq;
+  const box = $('annDash');
+  const fy = $('fy').value,
+    act = activeFiles(),
+    ps = periodsOf(fy);
+  const have = (kind: string) => new Set(act.filter(f => f.kind === kind).flatMap(covered));
+  const cov = (kind: string, label: string) => {
+    const n = ps.filter(p => have(kind).has(p)).length;
+    return meter(label, (n / 12) * 100, `${n} of 12 months loaded for ${fy}`, n === 12 ? 'ok' : n >= 9 ? 'warn' : 'bad');
+  };
+  const regs = act.filter(f => f.kind === 'Register').length;
+  const wps = act.filter(f => wpTabOf(f));
+  const tabs = new Set(wps.map(f => wpTabOf(f)));
+  const slot = (t: 'itc' | 'revenue' | 'flow', name: string) =>
+    statusLine(
+      tabs.has(t) ? 'ok' : 'warn',
+      tabs.has(t)
+        ? `${name} workpaper loaded`
+        : `${name} workpaper not loaded: finish that tab and drop its saved workpaper here`,
+    );
+  const status = `<ul class="dash-list">${slot('itc', 'Input Reco')}${slot('revenue', 'Revenue reco')}${slot('flow', 'GST ledger flow')}
+    ${statusLine(regs ? 'ok' : 'warn', regs ? `${regs} register file(s) loaded` : 'No sales or purchase register loaded (not needed when the workpapers are loaded)')}</ul>`;
+  const coverage = `<div class="dash-grid">${cov('GSTR-3B', 'GSTR-3B')}${cov('GSTR-1', 'GSTR-1')}${cov('GSTR-2B', 'GSTR-2B')}</div>`;
+  // headline figures read from the workpapers
+  let figs = '';
+  if (wps.length) {
+    const warns: any[] = [];
+    let cells: Record<string, any> = {};
+    try {
+      cells = (await workpaperCells(wps, warns)).cells;
+    } catch {
+      /* the build reports unreadable workpapers */
+    }
+    if (seq !== dashSeq) return;
+    const v = (k: string) => {
+      const x = cells[`B${(WPROW as Record<string, number>)[k]}`];
+      return typeof x === 'number' ? x : null;
+    };
+    const f = (x: number | null) => (x === null ? 'n/a' : inr(x));
+    const abs = (x: number | null) => (x === null ? 0 : Math.abs(x));
+    const t: string[] = [];
+    if (tabs.has('revenue'))
+      t.push(
+        tile('Turnover as per books', f(v('rev_books')), `GSTR-1 ${f(v('rev_g1'))} · 3B ${f(v('rev_3b'))}`, 'tot'),
+        tile(
+          'Revenue not explained',
+          f(v('rev_unx1') === null && v('rev_unx2') === null ? null : (v('rev_unx1') ?? 0) + (v('rev_unx2') ?? 0)),
+          'books to GSTR-1 and GSTR-1 to 3B',
+          abs(v('rev_unx1')) + abs(v('rev_unx2')) > 1 ? 'bad' : 'ok',
+        ),
+      );
+    if (tabs.has('itc'))
+      t.push(
+        tile('ITC claimable', f(v('itc_claim')), `books ${f(v('itc_books'))} · 2B available ${f(v('itc_avail'))}`, 'ok'),
+        tile(
+          'ITC at risk or unbooked',
+          f((v('itc_booksonly') ?? 0) + (v('itc_2bonly') ?? 0)),
+          `in books only ${f(v('itc_booksonly'))} · in 2B only ${f(v('itc_2bonly'))}`,
+          (v('itc_booksonly') ?? 0) + (v('itc_2bonly') ?? 0) > 1 ? 'warn' : 'ok',
+        ),
+      );
+    if (tabs.has('flow'))
+      t.push(
+        tile(
+          'Ledger flow not explained',
+          f(abs(v('flow_itc_unx')) + abs(v('flow_liab_unx')) + abs(v('flow_cash_unx'))),
+          'ITC, tax payable and cash ledger',
+          abs(v('flow_itc_unx')) + abs(v('flow_liab_unx')) + abs(v('flow_cash_unx')) > 1 ? 'bad' : 'ok',
+        ),
+        tile(
+          'Flow items to fix',
+          String((v('flow_fix') ?? 0) + (v('flow_checks') ?? 0)),
+          `${v('flow_fix') ?? 0} set-up issue(s) · ${v('flow_checks') ?? 0} cross-check(s) · ${v('flow_journals') ?? 0} journal(s)`,
+          (v('flow_fix') ?? 0) + (v('flow_checks') ?? 0) ? 'bad' : 'ok',
+        ),
+      );
+    figs = `<h3 style="font-size:14px;margin:14px 0 0">From your workpapers</h3><div class="kpis">${t.join('')}</div>`;
+  }
+  if (seq !== dashSeq) return;
+  const built = lastBuild
+    ? `<h3 style="font-size:14px;margin:14px 0 0">Last build</h3><ul class="dash-list">${(['error', 'warn', 'info'] as const)
+        .map(l => ({ l, n: lastBuild!.warns.filter(w => w.level === l).length }))
+        .map(({ l, n }) =>
+          statusLine(
+            l === 'error' ? (n ? 'bad' : 'ok') : l === 'warn' ? (n ? 'warn' : 'ok') : 'ok',
+            `${n} ${l === 'error' ? 'error(s)' : l === 'warn' ? 'warning(s)' : 'note(s)'} in ${esc(lastBuild!.name)}`,
+          ),
+        )
+        .join('')}</ul>`
+    : '';
+  const rec = review.hasItems() ? `<h3 style="font-size:14px;margin:14px 0 0">Reconciliations</h3>${review.dashHtml()}` : '';
+  box.innerHTML = `<h3 style="font-size:14px;margin:0">Inputs</h3>${coverage}${status}${figs}${rec}${built}`;
+}
 
 async function addFiles(list: FileList | File[]) {
   // copy the list now: the file input is cleared right after this call and its FileList with it
@@ -538,6 +647,8 @@ const buildNow = async () => {
     );
     res.bytes = await addStateSheets(res.bytes, packState('annual', clientGstin(), fy, nowTxt()));
     const name = `GSTR9_${($('gstin').value || 'client').trim()}_${fy}.xlsx`;
+    lastBuild = { warns: res.warns, name };
+    renderDash();
     const url = URL.createObjectURL(
       new Blob([res.bytes as any], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     );
@@ -1127,6 +1238,8 @@ async function buildItcNow(fy: string) {
     $('status').innerHTML = `<span class="warn-error">${esc(e.message)}</span>`;
   }
 }
+
+review.onItems = () => renderDash();
 
 // ---------- GST ledger flow tab
 const flow = new FlowTab(
