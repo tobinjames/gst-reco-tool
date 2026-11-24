@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { STEPS, canVisit, firstBlocked, Ctx } from '../src/wizard';
+import { STEPS, NEEDS, canVisit, firstBlocked, Ctx } from '../src/wizard';
 
 const ctx = (o: Partial<Ctx> = {}): Ctx => ({ kinds: new Set(), hasWorkpaper: false, gstin: '', nFiles: 0, ...o });
 
@@ -24,4 +24,8 @@ assert.ok(canVisit(itc, 4, ctx({ ...have, gstin: '32AAACJ1234K1Z5' })));
 assert.equal(itc[0].missing!(ctx({ hasWorkpaper: true, gstin: 'X', nFiles: 1 })), null);
 // flow needs both portal and books ledgers
 assert.match(STEPS.flow[0].missing!(ctx({ kinds: new Set(['Portal ledger']) }))!, /Books ledger/);
+// results with several views are sub-tabs; every tab lists what it needs
+assert.deepEqual(STEPS.revenue[4].sub, ['rv-st1', 'rv-st2', 'rv-items']);
+assert.deepEqual(STEPS.flow[4].cards, []);
+for (const t of Object.keys(STEPS) as (keyof typeof STEPS)[]) assert.ok(NEEDS[t].length >= 2, t);
 console.log('wizard ok');
