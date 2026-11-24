@@ -10,6 +10,7 @@ import { generate9 } from './gen9';
 import { Review } from './review';
 import { FlowTab } from './flow/ui';
 import { RevenueTab } from './revenue/ui';
+import { Wizard, wizardOn } from './wizard';
 import { SettingsCard } from './settings';
 import { closeHelp, initHelp } from './help';
 import { Restored, addStateSheets, applyState, packState, readSavedFiles, setStateProvider, undoState } from './state';
@@ -111,6 +112,7 @@ function setTab(t: Tab) {
   $('result').innerHTML = '';
   settings.render(t);
   render();
+  if (WIZ) wiz.setTab(t);
 }
 document.querySelectorAll('button.tab').forEach((b: any) => (b.onclick = () => setTab(b.dataset.tab)));
 
@@ -133,6 +135,18 @@ const activeFiles = () => {
   const o = new Set(otherGstin());
   return files.filter(f => !o.has(f));
 };
+
+const WIZ = wizardOn();
+const wiz = new Wizard(() => {
+  const af = activeFiles();
+  return {
+    kinds: new Set(af.map(f => f.kind)),
+    hasWorkpaper: af.some(f => f.saved),
+    gstin: clientGstin(),
+    nFiles: af.length,
+  };
+});
+if (WIZ) document.body.classList.add('wiz');
 
 async function parsePdf(b: Uint8Array, name: string) {
   const doc = await pdfjs.getDocument({ data: b }).promise;
@@ -206,6 +220,7 @@ function render() {
   renderRegisters();
   flow.refresh();
   revenue.refresh();
+  if (WIZ) wiz.apply();
 }
 
 // ---------- month-wise coverage grid
@@ -395,6 +410,8 @@ async function addFilesNow(all: File[]) {
   // a dropped workpaper opens its own tab, except on the Annual return tab, which is built from the other tabs' workpapers
   if (wpTab && wpTab !== tab && tab !== 'annual') setTab(wpTab);
   else render();
+  // a saved workpaper brings its files and settings: go straight on to the review
+  if (WIZ && wpTab) wiz.afterRestore();
   const msg = [
     dup ? `${dup} duplicate file(s) skipped` : '',
     replaced.length ? `Replaced the workpaper's copy: ${replaced.join(', ')}` : '',
@@ -516,6 +533,19 @@ drop.ondrop = (e: DragEvent) => {
   drop.classList.remove('over');
   if (e.dataTransfer?.files) addFiles(e.dataTransfer.files);
 };
+
+// wizard: files can be dropped anywhere on the page, on any step
+if (WIZ) {
+  document.addEventListener('dragover', (e: DragEvent) => {
+    if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+  });
+  document.addEventListener('drop', (e: DragEvent) => {
+    const t = e.target as HTMLElement;
+    if (t.closest?.('#drop, #drop2, .dz') || !e.dataTransfer?.files.length) return;
+    e.preventDefault();
+    addFiles(e.dataTransfer.files);
+  });
+}
 
 $('build').onclick = () => withProgress('Building the workbook…', buildNow);
 const buildNow = async () => {
