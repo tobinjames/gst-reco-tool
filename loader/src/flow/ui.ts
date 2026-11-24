@@ -46,7 +46,9 @@ import { esc, fyShift, inr, store } from '../util';
 import { FLOW_GUIDE } from './guide';
 import { readTable } from '../register';
 import { Settings, describe } from '../settings';
+import { meter, ranked, stackedBars, statusLine, tile, short } from '../dash';
 
+const r2 = (x: number) => Math.round(x * 100) / 100;
 const fmt = (v: number) => (Math.abs(v) < 0.005 ? '–' : inr(v));
 const $ = (id: string) => document.getElementById(id)! as any;
 const HK_TXT: Record<HeadK, string> = { IGST: 'IGST', CGST: 'CGST', SGST: 'SGST', CESS: 'Cess', ALL: 'Not split' };
@@ -203,6 +205,7 @@ export class FlowTab {
     this.renderPortal(portal);
     this.renderBooks(books, accs, regs);
     this.renderBalances(books, portal);
+    this.renderDash();
     this.renderFlow();
     this.renderReasons();
     this.renderChecks();
@@ -213,6 +216,76 @@ export class FlowTab {
   private guide(src: ('portal' | 'tally' | 'zoho' | 'other')[], title: string) {
     const items = FLOW_GUIDE.filter(g => src.includes(g.source));
     return `<details class="guide"><summary><span class="gq">?</span> ${title}</summary><div class="gpane on"><div class="gitems">${items.map(g => `<div class="gitem"><h4>${esc(g.title)} <span class="gfor">${g.source === 'portal' ? 'GST portal' : g.source === 'tally' ? 'Tally' : g.source === 'zoho' ? 'Zoho Books' : 'Other'}</span></h4><ol>${g.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>${g.note ? `<p class="muted">${esc(g.note)}</p>` : ''}</div>`).join('')}</div></div></details>`;
+  }
+
+  // ---------- "At a glance" card
+  /** the summary at the top of the tab: closings, how much of the difference is explained, where it is, what to do first */
+  private renderDash() {
+    const box = $('flDash');
+    const r = this.res,
+      y = this.year;
+    if (!r || !y) {
+      box.innerHTML = '<p class="muted">Add the portal ledgers and the books GST accounts to see the summary.</p>';
+      return;
+    }
+    const tot = (st: Result['flowBooks'], b: Block) => HEAD_KEYS.reduce((s, h) => s + st.closing[b][h], 0);
+    const mag = (i: Item) => HEAD_KEYS.reduce((s, h) => s + Math.abs(i.amt[h]), 0);
+    const allT = r.items.reduce((s, i) => s + mag(i), 0),
+      unex = r.items.filter(i => !i.explained),
+      unT = unex.reduce((s, i) => s + mag(i), 0);
+    const pct = allT > 0 ? ((allT - unT) / allT) * 100 : 100;
+    const agree = BLOCKS.filter(b => b !== 'fee').filter(b => Math.abs(tot(r.flowBooks, b) - tot(r.flowPortal, b)) < 1).length;
+    const nFix = y.setup.filter(x => x.level === 'fix').length,
+      nChk = r.checks.filter(c => !c.ok).length;
+    const closing = (label: string, b: Block) => {
+      const bb = tot(r.flowBooks, b),
+        pp = tot(r.flowPortal, b),
+        d = bb - pp;
+      return tile(label, fmt(bb), `portal ${fmt(pp)} · difference ${fmt(d)}`, Math.abs(d) < 1 ? 'ok' : 'warn');
+    };
+    const tiles = `<div class="kpis">${closing('ITC closing (books)', 'itc')}${closing('Liability closing (books)', 'liab')}${closing('Cash ledger closing (books)', 'cash')}
+      ${tile('Unexplained', String(unex.length), unex.length ? `item(s), ${fmt(unT)} in total` : 'every difference is explained', unex.length ? 'bad' : 'ok')}</div>`;
+    const meters = `<div class="dash-grid">${meter('Differences explained', pct, `${r.items.length - unex.length} of ${r.items.length} items explained · ${agree} of 3 closings agree with the portal`, pct >= 99 ? 'ok' : pct >= 80 ? 'warn' : 'bad')}</div>`;
+    // differences by month, before they are explained, stacked by block
+    const blockOfBucket = (id: string) => BUCKETS.find(x => x.id === id)?.block;
+    const months = r.months;
+    const vals = (b: Block) =>
+      months.map(m =>
+        r2(r.monthly.filter(x => x.month === m && blockOfBucket(x.bucket) === b).reduce((a, x) => a + Math.abs(x.b - x.p), 0)),
+      );
+    const chart = stackedBars(
+      months.map(ymLabel),
+      [
+        { name: BLOCK_LABEL.itc, color: '#4552B0', vals: vals('itc') },
+        { name: BLOCK_LABEL.liab, color: '#1F9E89', vals: vals('liab') },
+        { name: BLOCK_LABEL.cash, color: '#E08A1E', vals: vals('cash') },
+        { name: BLOCK_LABEL.fee, color: '#8A92A6', vals: vals('fee') },
+      ],
+      {
+        aria: 'Differences between books and portal by month',
+        note: 'books vs portal by month, before explanations',
+        fmtVal: short,
+      },
+    );
+    const top = [...unex]
+      .sort((a, b) => mag(b) - mag(a))
+      .slice(0, 8)
+      .map(i => ({ label: i.text, sub: `${i.category} · ${BLOCK_LABEL[i.block]}`, val: mag(i) }));
+    const rank = ranked('Largest unexplained items', top, 'Nothing is unexplained.');
+    const todo = [
+      statusLine(
+        nFix ? 'bad' : 'ok',
+        nFix ? `<b>${nFix}</b> set-up issue(s) to fix first (see Set-up checks in the workbook)` : 'No set-up issues to fix',
+      ),
+      statusLine(nChk ? 'bad' : 'ok', nChk ? `<b>${nChk}</b> cross-check(s) do not agree` : 'All cross-checks agree'),
+      statusLine(
+        y.journals.length ? 'warn' : 'ok',
+        y.journals.length
+          ? `<b>${y.journals.length}</b> suggested journal(s) to bring the books in line with the portal`
+          : 'No journals suggested',
+      ),
+    ].join('');
+    box.innerHTML = `${meters}${tiles}<div class="dash-grid">${chart}<div>${rank}<ul class="dash-list" style="margin-top:14px">${todo}</ul></div></div>`;
   }
 
   // ---------- 1. portal ledgers

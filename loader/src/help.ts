@@ -104,6 +104,7 @@ export function helpHtml(): string {
 
   <section id="h-itc">
     <h2>Input Reco: GSTR-2B against the purchase register</h2>
+    <p><b>At a glance:</b> once the files are in, a summary card shows the share of documents matched (by count and by tax value), ITC claimable, ITC at risk (in books only, or above 2B), 2B credit not booked, a stacked month chart of matched / value difference / books only / 2B only, and the ten suppliers with the largest tax difference. Purchases and sales are shown separately.</p>
     <p><b>Purpose:</b> find out which purchase bills can be claimed as ITC, which are in the books but not in the supplier's GSTR-2B (do not claim yet), and which are in 2B but missing from the books.</p>
     <p><b>Files:</b> GSTR-2B JSON for each month you are reconciling, and the purchase register (or several: Tally register, journals with GST, payment vouchers, Zoho bills and expenses). Include credit notes and debit notes.</p>
     <h3>How the matching works</h3>
@@ -137,6 +138,7 @@ export function helpHtml(): string {
 
   <section id="h-flow">
     <h2>GST ledger flow: portal ledgers against books</h2>
+    <p><b>At a glance:</b> a summary card shows the share of the difference between books and portal that is explained, the three closing balances against the portal, the number of unexplained items, a month chart of differences by block, the largest unexplained items, and the set-up issues, cross-checks and journals still to deal with.</p>
     <p><b>Purpose:</b> show the whole movement of GST for the year (opening, output tax, RCM, credit notes, ITC availed, reversed and reclaimed, set-off, cash deposits and use, interest, late fee, penalty, refunds, closing) once as per books and once as per the portal, and explain every difference from the entries themselves.</p>
     <p><b>Files:</b> the portal's Electronic Credit Ledger, Electronic Cash Ledger and Electronic Liability Register (CSV or Excel), and the GST ledgers from the books (Tally voucher dump, Zoho detailed GL, or one export per ledger). GSTR-3B PDFs and GSTR-2B JSON are optional and add cross-checks and the ITC comparison.</p>
     <h3>Steps</h3>
@@ -195,7 +197,7 @@ export function helpHtml(): string {
     </ol>
     <p>Every mapping shows its basis on screen and on the Customer_Map sheet. Similar names are only suggested.</p>
     <h3>The statements</h3>
-    <p><b>Dashboard:</b> tiles, a month chart (books, GSTR-1, GSTR-3B) and a month table with running differences, for taxable value or tax.</p>
+    <p><b>At a glance (dashboard):</b> tiles, how much of each statement is explained, the months with the largest gaps, a month chart (books, GSTR-1, GSTR-3B) and a month table with running differences, for taxable value or tax.</p>
     <p><b>Books → GSTR-1:</b> the books total, then one line per reason, ending at the GSTR-1 total, like a bank reconciliation. "Not explained" is always the last line. <b>GSTR-1 → GSTR-3B:</b> RCM supplies, advances and months without a 3B, then each 3B table.</p>
     <table>
       <tr><th>Reason</th><th>Set by</th><th>What to do</th></tr>
@@ -206,6 +208,7 @@ export function helpHtml(): string {
 
   <section id="h-annual">
     <h2>Annual return: GSTR-9 and 9C</h2>
+    <p><b>At a glance:</b> a summary card shows how many months of GSTR-3B, GSTR-1 and GSTR-2B are loaded, which of the three workpapers are in, headline figures read from them (turnover, ITC claimable, unexplained differences), the reconciliations of purchases and sales, and the errors and warnings of the last build.</p>
     <p><b>Purpose:</b> fill the GSTR-9 / 9C workpaper from the returns and the books, check it against the portal's auto-drafted GSTR-9, and produce the GSTR-9 upload JSON.</p>
     <h3>Recommended route: build from your three workpapers</h3>
     <ol>

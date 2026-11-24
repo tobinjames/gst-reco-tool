@@ -26,6 +26,7 @@ import {
 import { GlResult, REV_CLASSES, REV_CLASS_LABEL, RevClass, glDocs } from './ledgers';
 import { ITEMS_SHEET, RevAudit, readItemsSheet, revenueWorkbook } from './workbook';
 import { REV_GUIDE } from './guide';
+import { meter, ranked } from '../dash';
 import { nameKey } from '../suppliers';
 import {
   CUST_HOW,
@@ -576,6 +577,28 @@ export class RevenueTab {
     const kpis = `<div class="kpis">${kp('Books', r.books.turnover[s], `turnover, ${lab}`)}${kp('GSTR-1', r.g1Turnover[s], `${lab}`)}${kp('GSTR-3B', r.tbTotal[s], `Table 3.1, ${r.months.filter(m => m.tbt).length} month(s)`)}
       ${kp('GSTR-1 − books', d1, `${r.st1.filter(l => l.kind === 'line').length} reason(s)`, Math.abs(d1) > r.tol ? 'warn' : 'ok')}${r.months.some(m => m.tbt) ? kp('3B − GSTR-1', d2, 'see GSTR-1 → 3B', Math.abs(d2) > r.tol ? 'warn' : 'ok') : kp('3B − GSTR-1', 0, 'no GSTR-3B loaded', 'tot')}
       ${kp('Not explained', r2(unx1 + unx2), `${open} entr${open === 1 ? 'y' : 'ies'} to look at · ${mine} with your reason`, Math.abs(unx1 + unx2) > r.tol ? 'bad' : 'ok')}</div>`;
+    // quick read: how much of each difference is explained, and the months to look at first
+    const explained = (lines: StLine[], unx: number) => {
+      const reasons = lines.filter(l => l.kind === 'line' && l.code !== 'unx').reduce((a, l) => a + Math.abs(l.amt[s]), 0);
+      return reasons + Math.abs(unx) < r.tol ? 100 : (reasons / (reasons + Math.abs(unx))) * 100;
+    };
+    const tone = (p: number) => (p >= 99 ? 'ok' : p >= 80 ? 'warn' : 'bad');
+    const e1 = explained(r.st1, unx1),
+      e2 = explained(r.st2, unx2);
+    const hasTb = r.months.some(m => m.tbt);
+    const worst = r.months
+      .map(m => ({ m, a: r2(m.g1[s] - m.books[s]), b: m.tb ? r2(m.tb[s] - m.g1[s]) : 0 }))
+      .filter(x => Math.abs(x.a) + Math.abs(x.b) > r.tol)
+      .sort((x, y) => Math.abs(y.a) + Math.abs(y.b) - (Math.abs(x.a) + Math.abs(x.b)))
+      .slice(0, 5)
+      .map(x => ({
+        label: ymLabel(x.m.ym),
+        sub: `GSTR-1 − books ${fmt(x.a)}${hasTb ? ` · 3B − GSTR-1 ${fmt(x.b)}` : ''}`,
+        val: Math.abs(x.a) + Math.abs(x.b),
+      }));
+    const glance = `<div class="dash-grid">${meter('Books to GSTR-1 explained', e1, `${r.st1.filter(l => l.kind === 'line' && l.code !== 'unx').length} reason(s) found`, tone(e1))}
+      ${hasTb ? meter('GSTR-1 to GSTR-3B explained', e2, `${r.st2.filter(l => l.kind === 'line' && l.code !== 'unx').length} reason(s) found`, tone(e2)) : meter('GSTR-1 to GSTR-3B explained', 0, 'no GSTR-3B loaded', 'warn')}
+      ${ranked('Months to look at first (size of the gap)', worst, 'Every month agrees.')}</div>`;
     // grouped bars per month: books, GSTR-1, 3B
     const ser = [
       { name: 'Books', color: '#4552B0', v: (m: (typeof r.months)[number]) => m.books[s] },
@@ -643,6 +666,7 @@ export class RevenueTab {
       checks +
       `<div class="rv-bar"><div class="seg"><button class="${s ? '' : 'on'}" data-side="0">Taxable value</button><button class="${s ? 'on' : ''}" data-side="1">Tax</button></div></div>` +
       kpis +
+      glance +
       chart +
       table;
     box.querySelectorAll('button[data-side]').forEach(

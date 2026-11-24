@@ -5,6 +5,7 @@ import { DEFAULT_MATCH, MatchOptions } from './recon';
 import { describeInvoices } from './settings';
 import { simpleXlsx } from './xlsxbook';
 import { esc, inr, store } from './util';
+import { meter, ranked, stackedBars, tile, short } from './dash';
 
 type Side = 'purchases' | 'sales';
 type View = 'suppliers' | 'invoices';
@@ -249,6 +250,7 @@ export class Review {
     this.busy = false;
     this.card.style.display = this.items.purchases || this.items.sales || this.err ? '' : 'none';
     this.draw();
+    this.onItems();
   }
   private decisionsOrUndefined() {
     return this.decisions.purchases || this.decisions.sales ? { ...this.decisions } : undefined;
@@ -560,6 +562,113 @@ export class Review {
     if (this.view === 'suppliers' && f.supStatus) p.push(f.supStatus);
     if (this.view === 'suppliers' && f.supUnmatched) p.push('with unmatched');
     return p.join(', ');
+  }
+
+  // ---------- dashboard ("At a glance" card): built from the same items as the review, whole side, not filtered
+  /** called after every run so the tab's dashboard card can redraw */
+  onItems: () => void = () => {};
+  hasItems() {
+    return !!(this.items.purchases || this.items.sales);
+  }
+  dashHtml(): string {
+    return (['purchases', 'sales'] as Side[])
+      .filter(s => this.items[s])
+      .map(s => this.dashSide(s))
+      .join('');
+  }
+  private dashSide(side: Side): string {
+    const L = LABEL[side],
+      all = (this.items[side] || []).filter(x => x.group !== 'nc');
+    if (!all.length) return '';
+    const isM = (g: string) => g === 'matched' || g === 'diff' || g === 'other' || g === 'manual';
+    const cnt = (g: string) => all.filter(x => x.group === g).length;
+    const matched = all.filter(x => isM(x.group));
+    const sum = (l: Item[], f: (x: Item) => number) => r2(l.reduce((a, x) => a + f(x), 0));
+    const lo = (x: Item) => Math.min(x.bTax ?? 0, x.rTax ?? 0);
+    const covered = sum(matched, lo),
+      booksTax = sum(all, x => x.bTax ?? 0);
+    const books = all.filter(x => x.group === 'books'),
+      ret = all.filter(x => x.group === 'ret');
+    const over = sum(matched, x => Math.max(0, (x.bTax ?? 0) - (x.rTax ?? 0)));
+    const atRisk = r2(sum(books, x => x.bTax ?? 0) + over);
+    const pctN = (matched.length / all.length) * 100,
+      pctV = booksTax > 0 ? (covered / booksTax) * 100 : 100;
+    const diffs = cnt('diff');
+    const tone = (p: number) => (p >= 95 ? 'ok' : p >= 80 ? 'warn' : 'bad');
+    const meters = `<div class="dash-grid">${meter(`Documents matched (${all.length} in all)`, pctN, `${cnt('matched') + cnt('manual') + cnt('other')} agree · ${diffs} value difference · ${books.length} in books only · ${ret.length} in ${L.ret} only`, tone(pctN))}
+      ${meter(side === 'purchases' ? `Books tax backed by ${L.ret}` : `Books tax reported in ${L.ret}`, pctV, `${fmt(covered)} of ${fmt(booksTax)}`, tone(pctV))}</div>`;
+    const tiles =
+      side === 'purchases'
+        ? `<div class="kpis">${tile('ITC claimable', fmt(covered), 'lower of books and 2B on matched invoices', 'ok')}
+          ${tile('ITC at risk', fmt(atRisk), `${fmt(sum(books, x => x.bTax ?? 0))} in books only + ${fmt(over)} above 2B`, atRisk > 1 ? 'bad' : 'ok')}
+          ${tile('In 2B, not in books', fmt(sum(ret, x => x.rTax ?? 0)), `${ret.length} document(s): credit available but not booked`, ret.length ? 'warn' : 'ok')}
+          ${tile(
+            'Value differences',
+            String(diffs),
+            `net tax ${fmt(
+              sum(
+                all.filter(x => x.group === 'diff'),
+                x => x.dTax,
+              ),
+            )} (books − 2B)`,
+            diffs ? 'warn' : 'ok',
+          )}</div>`
+        : `<div class="kpis">${tile('Tax matched', fmt(covered), `${matched.length} document(s)`, 'ok')}
+          ${tile('In books, not in GSTR-1', fmt(sum(books, x => x.bTax ?? 0)), `${books.length} document(s): possibly not reported`, books.length ? 'bad' : 'ok')}
+          ${tile('In GSTR-1, not in books', fmt(sum(ret, x => x.rTax ?? 0)), `${ret.length} document(s)`, ret.length ? 'warn' : 'ok')}
+          ${tile(
+            'Value differences',
+            String(diffs),
+            `net tax ${fmt(
+              sum(
+                all.filter(x => x.group === 'diff'),
+                x => x.dTax,
+              ),
+            )} (books − GSTR-1)`,
+            diffs ? 'warn' : 'ok',
+          )}</div>`;
+    // by return period (documents in books only have none)
+    const per = [...new Set(all.map(x => x.period || ''))].sort((a, b) =>
+      a === '' ? 1 : b === '' ? -1 : (a.slice(3) + a.slice(0, 2)).localeCompare(b.slice(3) + b.slice(0, 2)),
+    );
+    const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const lab = (p: string) => (/^\d\d\/\d{4}$/.test(p) ? `${MON[+p.slice(0, 2) - 1]} ${p.slice(5)}` : 'No period');
+    const by = (pred: (g: string) => boolean) => per.map(p => all.filter(x => (x.period || '') === p && pred(x.group)).length);
+    const chart = stackedBars(
+      per.map(lab),
+      [
+        { name: 'Matched', color: '#1F9E89', vals: by(g => g === 'matched' || g === 'other' || g === 'manual') },
+        { name: 'Value difference', color: '#E08A1E', vals: by(g => g === 'diff') },
+        { name: 'In books only', color: '#B42318', vals: by(g => g === 'books') },
+        { name: `In ${L.ret} only`, color: '#4552B0', vals: by(g => g === 'ret') },
+      ],
+      {
+        aria: `Documents by ${L.ret} period and status`,
+        note: `documents by ${L.ret} period (books-only documents have no period)`,
+      },
+    );
+    // parties with the largest net difference
+    const g = new Map<string, { name: string; gstin: string; net: number; un: number }>();
+    for (const x of all) {
+      const k = x.gstin || x.name;
+      const e = g.get(k) || { name: x.name, gstin: x.gstin, net: 0, un: 0 };
+      e.net = r2(e.net + (x.bTax ?? 0) - (x.rTax ?? 0));
+      if (x.group === 'books' || x.group === 'ret') e.un++;
+      if (!e.name) e.name = x.name;
+      g.set(k, e);
+    }
+    const top = [...g.values()]
+      .filter(e => Math.abs(e.net) > 0.5)
+      .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+      .slice(0, 10)
+      .map(e => ({ label: e.name || e.gstin, sub: `${e.gstin || 'no GSTIN'}${e.un ? ` · ${e.un} unmatched` : ''}`, val: e.net }));
+    const rank = ranked(
+      `Largest tax differences by ${L.party.toLowerCase()} (books − ${L.ret})`,
+      top,
+      `Every ${L.party.toLowerCase()} agrees.`,
+      fmt as any,
+    );
+    return `<div class="dash-side"><h3>${side === 'purchases' ? 'Purchases vs GSTR-2B' : 'Sales vs GSTR-1'}</h3>${meters}${tiles}<div class="dash-grid">${chart}${rank}</div></div>`;
   }
 
   // ---------- drawing

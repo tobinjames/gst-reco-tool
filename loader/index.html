@@ -1521,6 +1521,152 @@
         padding: 3px 10px;
         border-radius: 999px;
       }
+      /* dashboards ("At a glance") */
+      .dash-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+        gap: 16px;
+        margin: 6px 0 14px;
+      }
+      .dash-meter {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: var(--r-sm);
+        padding: 12px 14px;
+      }
+      .dash-meter .dm-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .dash-meter .dm-top b {
+        font-size: 22px;
+        color: var(--strong);
+        font-weight: 600;
+      }
+      .dash-meter .dm-bar {
+        height: 8px;
+        border-radius: 999px;
+        background: var(--brand-100);
+        margin: 6px 0;
+        overflow: hidden;
+      }
+      .dash-meter .dm-bar i {
+        display: block;
+        height: 100%;
+        background: var(--brand);
+        border-radius: 999px;
+      }
+      .dash-meter.ok .dm-bar i {
+        background: var(--ok);
+      }
+      .dash-meter.warn .dm-bar i {
+        background: #d49b1f;
+      }
+      .dash-meter.bad .dm-bar i {
+        background: var(--err);
+      }
+      .dash-meter .dm-sub {
+        font-size: 12px;
+        color: var(--text);
+      }
+      .dash-rank h4 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        color: var(--strong);
+      }
+      .dash-rank .dr-row {
+        display: grid;
+        grid-template-columns: minmax(120px, 38%) 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 4px 0;
+        font-size: 12.5px;
+      }
+      .dash-rank .dr-l {
+        display: grid;
+        min-width: 0;
+      }
+      .dash-rank .dr-l b,
+      .dash-rank .dr-l span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 500;
+        color: var(--strong);
+      }
+      .dash-rank .dr-l span {
+        font-size: 11px;
+        font-weight: 400;
+        color: var(--muted);
+      }
+      .dash-rank .dr-b {
+        height: 10px;
+        background: var(--tint);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .dash-rank .dr-b i {
+        display: block;
+        height: 100%;
+        background: var(--brand-500);
+        border-radius: 999px;
+      }
+      .dash-rank .dr-b i.neg {
+        background: #e08a1e;
+      }
+      .dash-rank .dr-v {
+        font-variant-numeric: tabular-nums;
+        color: var(--strong);
+        text-align: right;
+      }
+      ul.dash-list {
+        list-style: none;
+        margin: 6px 0 10px;
+        padding: 0;
+        display: grid;
+        gap: 6px;
+      }
+      li.dash-st {
+        display: grid;
+        grid-template-columns: 22px 1fr;
+        gap: 8px;
+        align-items: start;
+        font-size: 13px;
+        color: var(--strong);
+      }
+      li.dash-st i {
+        font-style: normal;
+        font-weight: 700;
+        text-align: center;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        line-height: 20px;
+        font-size: 12px;
+      }
+      li.dash-st.ok i {
+        background: var(--ok-bg);
+        color: var(--ok);
+      }
+      li.dash-st.warn i {
+        background: var(--warn-bg);
+        color: var(--warn);
+      }
+      li.dash-st.bad i {
+        background: var(--err-bg);
+        color: var(--err);
+      }
+      .dash-side {
+        margin: 0 0 18px;
+      }
+      .dash-side > h3 {
+        font-size: 14px;
+        margin: 4px 0 0;
+      }
       /* revenue reco chart */
       .rvchart {
         margin: 6px 0 14px;
@@ -1882,7 +2028,7 @@
         >
           <span class="gq">?</span> Help &amp; guide
         </button>
-        <span class="pill v">v0.16</span>
+        <span class="pill v">v0.17</span>
         <span class="pill"
           ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
             <rect x="5" y="11" width="14" height="10" rx="2" />
@@ -2160,6 +2306,31 @@
           <div id="files" style="margin-top: 10px"></div>
         </details>
       </section>
+      <section class="card dashcard" data-tabs="itc" id="dash-itc" style="display: none">
+        <h2>At a glance</h2>
+        <p class="muted" style="margin-top: -8px">
+          How well the books agree with GSTR-2B and GSTR-1, month by month. Detail is in Review matches below.
+        </p>
+        <div id="itcDash"></div>
+      </section>
+      <section class="card dashcard" data-tabs="annual" id="dash-annual">
+        <h2>At a glance</h2>
+        <p class="muted" style="margin-top: -8px">
+          Is the year ready for GSTR-9: what is loaded, and what the workpapers and reconciliations say.
+        </p>
+        <div id="annDash"></div>
+      </section>
+      <section class="card dashcard" data-tabs="flow" id="dash-flow">
+        <h2>At a glance</h2>
+        <p class="muted" style="margin-top: -8px">
+          Closings, how much of the difference between books and portal is explained, and what to fix first.
+        </p>
+        <div id="flDash"></div>
+      </section>
+      <section class="card dashcard" data-tabs="revenue" id="rv-dash">
+        <h2>At a glance</h2>
+        <div id="rvDash"></div>
+      </section>
       <section class="card" id="regcard" data-tabs="itc annual revenue" data-sub="b" style="display: none">
         <h2><span class="num">2b</span> Map register columns</h2>
         <p class="muted" style="margin-top: -8px">
@@ -2276,10 +2447,6 @@
       <section class="card" data-tabs="revenue" id="rv-cust" data-sub="b" style="display: none">
         <h2><span class="num">3b</span> Confirm customer names</h2>
         <div id="rvCust"></div>
-      </section>
-      <section class="card" data-tabs="revenue" id="rv-dash">
-        <h2><span class="num">4</span> Dashboard</h2>
-        <div id="rvDash"></div>
       </section>
       <section class="card" data-tabs="revenue" id="rv-st1">
         <h2><span class="num">5</span> Reconciliation: books to GSTR-1</h2>
