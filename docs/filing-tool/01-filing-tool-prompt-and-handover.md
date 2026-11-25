@@ -157,7 +157,7 @@ Derivation rules the tool should propose (all editable in config): GSTIN present
 ## 8. Audit log: who prepared, who reviewed
 
 ### 8.1 Event model
-Append-only `Audit` sheet. One entry per event: `Seq`, `Timestamp (UTC)`, `Actor` (email), `Role` (Preparer / Reviewer / Admin), `Action` (Created workbook, Imported register, Changed row, Voided row, Generated GSTR-1 JSON, Preview checked, Matched, Confirmed ITC decision, Prepared 3B, **Marked prepared**, **Marked reviewed**, Marked filed, Unlocked, Imported vendor confirmation, Exported archive), `Period`, `Object` (row ids or file name), `Content hash` (SHA-256 of the file generated or of a canonical dump of the rows affected), `Prev hash`, `Entry hash`, `Server receipt`.
+Append-only `Audit` sheet. One entry per event: `Seq`, `Timestamp (UTC)`, `Actor` (email), `Role` (Preparer / Reviewer; Admin only for user and role set-up), `Action` (Created workbook, Imported register, Changed row, Voided row, Generated GSTR-1 JSON, Preview checked, Matched, Confirmed ITC decision, Prepared 3B, **Marked prepared**, **Marked reviewed**, Marked filed, Imported vendor confirmation, Exported archive), `Period`, `Object` (row ids or file name), `Content hash` (SHA-256 of the file generated or of a canonical dump of the rows affected), `Prev hash`, `Entry hash`, `Server receipt`.
 
 `Entry hash = SHA-256(Seq | Timestamp | Actor | Role | Action | Period | Object | Content hash | Prev hash)`. Seq 1's `Prev hash` is the hash of the Client sheet at creation.
 
@@ -169,7 +169,7 @@ Append-only `Audit` sheet. One entry per event: `Seq`, `Timestamp (UTC)`, `Actor
 ### 8.3 Rules
 - Preparer and reviewer must differ (config can allow a self-review flag).
 - "Reviewed" is recorded against a **content hash of the JSON and of the period's Sales rows**; any later change to those rows invalidates the review and the Periods status returns to Prepared (visible in the log).
-- Unlocking a filed period needs Admin role, a reason from a list, and creates an entry.
+- **A filed period is locked for good; there is no unlock** (Tobin, 25 Nov 2026: once filed, nobody should reopen it). Corrections go in as amendment rows in a later period, the same way the portal handles amendments. The tool refuses any edit, void or re-upload on rows of a filed period; an edit made outside the tool shows up as a chain / hash break on the next open.
 - Say plainly in the Instructions sheet: *"This log is tamper-evident. It is not tamper-proof."*
 - Role assignment lives in a Worker-side table (KV/D1) keyed by Access email; the workbook only displays the roles it was told by the server (offline: last known roles, flagged).
 
@@ -189,13 +189,10 @@ Recommended shape (verify current plans and quotas):
 ### 10.1 Stack
 TypeScript + Vite single-file build like `loader/`, no framework (or a small one if the manual-entry grid needs it; decide in week 1). XLSX writing with the existing `xlsx.ts` / `xlsxbook.ts` (formulas with cached values, Aptos, Index, Instructions via `wpfront.ts`). PDF via a small pinned library.
 
-### 10.2 Repository (decided: a new repo)
-Tobin decided on a **new repository** (suggested name `gst-filing-tool`, private, same branch and PR conventions, same CI pattern as `gst-reco-tool`: `npm run check`, release workflow, optional Pages / Cloudflare deploy).
+### 10.2 Repository (decided: same repo)
+Tobin decided (25 Nov 2026) to keep the filing tool in **this repository** (`tobinjames/gst-reco-tool`), in a new top-level folder `filing/` next to `loader/` (this reverses an earlier choice of a new repo). Benefits: one copy of the matching, register, 2B and workbook-writing code, one CI, the workbook contract and its fixtures in one place, and the annual-return equivalence test runs in one repo.
 
-What the same repo would have given, so the cost is known: one copy of the matching, register, 2B and workbook-writing code, one CI, the workbook contract and its fixtures in one place, and the equivalence test (filing workbook → annual return) runnable in one repo. With two repos the code is shared in one of two ways:
-- **Copy (start here).** Copy the needed files from `loader/src` into the new repo as a snapshot, record the source commit in a `VENDORED.md`, and carry the golden tests (matching on `samples/input-reco`) so drift is visible. Cheap and fast; bug fixes must be applied twice.
-- **Package (later).** Extract `register`, `recon`, `suppliers`, `gstr1/2b/3b` readers, `xlsx`, `xlsxbook`, `util` into a shared package (e.g. `@jj/gst-core`, published to GitHub Packages or consumed as a git dependency) used by both repos. Do this once the filing tool's needs are known, as a separate PR in the current repo with no behaviour change (the existing test cases prove it).
-Whichever is used, the **workbook contract** lives in one place only: `docs/filing-tool/workbook-contract.md` in the new repo, mirrored by a fixture generator that the current repo's tests also use (copied fixture file with its schema version).
+Rules to keep the two apps apart: `filing/` imports shared code from `loader/src` by path alias at first, with **no behaviour change to the loader in the filing PRs**; extract a `core/` folder (shared modules, moved in a separate no-behaviour-change PR proved by the existing test cases) once the filing tool's needs are known; separate build outputs and release tags (`filing-vX.Y` vs `vX.Y`), a separate CI job per app, and the filing tool's Cloudflare Access / Worker code in `filing/worker/` so the offline loader stays free of login and server dependencies. The workbook contract lives in `docs/filing-tool/workbook-contract.md`, with one fixture generator used by both apps' tests.
 
 ### 10.3 Reuse map (current tool → new tool)
 | Need | Reuse |
@@ -241,12 +238,12 @@ Do not wait for pain. Decide now:
 
 ## 13. Open questions for Tobin
 
-Answered 25 Nov 2026: one workbook per GSTIN; new repo; portal files stay required for the annual return and win over the workbook; the demo samples are the test data for now.
+Answered 25 Nov 2026: one workbook per GSTIN; same repo (`filing/` folder); a filed period is locked for good with no unlock role (corrections are amendments in a later period); portal files stay required for the annual return and win over the workbook; the demo samples are the test data for now.
 
 Still open:
-3. Can staff accept that "immutable" means tamper-evident plus server anchor, with the server layer in phase 3 and Cloudflare Access login mandatory?
+3. **Immutability (still open; to be explained to Tobin in plain terms):** a file anyone can open in Excel cannot be made impossible to change. The choice is between (a) a chain inside the file that shows when something was changed, and (b) the same plus a record on a Cloudflare server that staff cannot edit, which needs login through Cloudflare Access. Recommended: (b), server layer in phase 3.
 4. Real samples needed: a client sales register (anonymised), a GSTR-1 preview / summary the portal gives, a portal 3B JSON, a GSTR-1 filed JSON with CDNR and amendments.
-5. Who may unlock a filed period (Admin only)? Can a small client be self-reviewed?
+5. Can a small one-person client be self-reviewed (logged as such)?
 6. Which of QRMP quarterly filers are in scope for v1 (IFF)? 
 7. PDF font: Aptos is not freely embeddable; which font for the client PDF?
 8. Do clients ever have e-invoice IRN data to import (e-invoice is a separate JSON/portal flow)? Out of scope in v1 unless asked.
@@ -259,9 +256,9 @@ Still open:
 
 ---
 
-You are building a new tool inside the GitHub repo `tobinjames/gst-reco-tool` (private; owner is James & James LLP, Tobin James). Read first (in the `gst-reco-tool` repo), in this order: `docs/HANDOVER.md`, `docs/filing-tool/01-filing-tool-prompt-and-handover.md` (Part A is your specification and says what is open), `docs/filing-tool/02-annual-return-integration-plan.md`. Then read `loader/src/register.ts`, `recon.ts`, `gstr2b.ts`, `gstr1.ts`, `xlsxbook.ts`, `state.ts`, `wpfront.ts`, `util.ts` and `loader/test/`.
+You are building a new tool inside the GitHub repo `tobinjames/gst-reco-tool` (private; owner is James & James LLP, Tobin James). Read first, in this order: `docs/HANDOVER.md`, `docs/filing-tool/01-filing-tool-prompt-and-handover.md` (Part A is your specification and says what is open), `docs/filing-tool/02-annual-return-integration-plan.md`. Then read `loader/src/register.ts`, `recon.ts`, `gstr2b.ts`, `gstr1.ts`, `xlsxbook.ts`, `state.ts`, `wpfront.ts`, `util.ts` and `loader/test/`.
 
-**What to build.** A browser-based GST filing preparation tool (GSTR-1 first, then purchase/2B matching, then GSTR-3B), in the new repository `gst-filing-tool`, starting from a vendored copy of the matching, register, 2B and workbook-writing code from `tobinjames/gst-reco-tool` (`loader/src`, record the source commit in VENDORED.md) rather than rewriting it; later it may become a shared package. One Excel workbook per client GSTIN holds all periods and grows with every filing. It must: take a sales register or manual entry; derive a section code (b2b, b2cl, b2cs, …) and return period per row, editable by the user; validate and generate the GSTR-1 JSON in the current GSTN format (use official sample payloads, never guess field names); optionally compare a portal GSTR-1 preview with the data; match purchase register to GSTR-2B with the current tool's logic and store links as match codes in both tables; produce client vendor confirmation (PDF summary and Excel detail, re-importable) when there is no purchase register; suggest blocked credit (Sec 17(5)) by keywords showing the hit and the usual exceptions, which the user confirms or overrides; prepare GSTR-3B figures and record the values actually filed; keep a hash-chained audit log of who prepared and who reviewed in the workbook, with server anchoring through Cloudflare Access plus a Worker and D1 (hashes only, no client data). The workbook layout in §5 of the handover is a contract with the annual return tool: do not change it without a schema version bump and a migration.
+**What to build.** A browser-based GST filing preparation tool (GSTR-1 first, then purchase/2B matching, then GSTR-3B), in a new top-level folder `filing/` of this repo, importing the matching, register, 2B and workbook-writing code from `loader/src` (path alias, no behaviour change to the loader; extract a shared `core/` in a separate PR later) rather than rewriting it. One Excel workbook per client GSTIN holds all periods and grows with every filing. It must: take a sales register or manual entry; derive a section code (b2b, b2cl, b2cs, …) and return period per row, editable by the user; validate and generate the GSTR-1 JSON in the current GSTN format (use official sample payloads, never guess field names); optionally compare a portal GSTR-1 preview with the data; match purchase register to GSTR-2B with the current tool's logic and store links as match codes in both tables; produce client vendor confirmation (PDF summary and Excel detail, re-importable) when there is no purchase register; suggest blocked credit (Sec 17(5)) by keywords showing the hit and the usual exceptions, which the user confirms or overrides; prepare GSTR-3B figures and record the values actually filed; keep a hash-chained audit log of who prepared and who reviewed in the workbook, with server anchoring through Cloudflare Access plus a Worker and D1 (hashes only, no client data). The workbook layout in §5 of the handover is a contract with the annual return tool: do not change it without a schema version bump and a migration.
 
 **Rules.**
 - Plan before coding. Post the plan (phases, risks, questions) and wait for Tobin's go. Build in the phases of §12; each phase is a pull request that passes `npm run check`.

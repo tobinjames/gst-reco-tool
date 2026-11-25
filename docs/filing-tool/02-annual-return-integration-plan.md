@@ -8,7 +8,7 @@ Based on `docs/HANDOVER.md` as of Loader v0.19.
 
 - **Portal data is always required.** The annual return still loads the portal files (GSTR-1 JSON, GSTR-2B JSON, GSTR-3B PDFs, the auto-drafted GSTR-9 JSON). They are the source of truth for what was reported. The filing workbook does **not** replace them.
 - The workbook adds the **books detail**: invoice-level sales with section code and return period, purchases, the purchase-to-2B links (match codes), ITC / blocked-credit decisions and the filed 3B figures it recorded. Unfiled (draft) periods do not count.
-- One workbook per GSTIN.
+- One workbook per GSTIN. The filing tool lives in the same repo. A filed period is locked for good (corrections are amendments in a later period). Closed-year **archive** workbooks are accepted. Of the other tabs, only **GST ledger flow** will later take the workbook (Revenue reco and Input Reco already work from reconciled data and do not need it).
 - Test data: the existing demo samples in the project files (`samples/input-reco`, `samples/revenue`); real anonymised files later.
 
 ## 1. The idea and what it means
@@ -95,7 +95,7 @@ The workbook is *our record of the books and our decisions*; portal files are *w
 | `src/filingadapt.ts` (new) | sales → RAW_GSTR1 rows; 2B → RAW_2B; purchases → Books_Purchase; 3B → ThreeB; Match Codes → manual codes; ITC decisions → claimed/reversal columns |
 | `src/wizard.ts` | NEEDS lists unchanged for the portal files; the filing workbook is an optional books source that satisfies the registers and match codes ("workbook covers N of 12 months") |
 | `src/state.ts` | the filing workbook is a workbook and is not embedded in `_JJFiles` (as for every workbook); the annual workpaper records the workbook name, schema, last Seq and head hash it was built from, so a rebuild can tell the workbook changed |
-| `src/revenue/*`, Input Reco | optional second step: the Revenue reco and Input Reco tabs accept the same workbook (sales + filed 1/3B; purchases + 2B + matches), so the monthly tabs also start from one file. Not needed for the first annual release |
+| `src/flow/*` | later, optional: GST ledger flow reads the workbook for books-side GST entries and ITC / output detail (scope to be agreed when it is taken up). Revenue reco and Input Reco are unchanged (Tobin: they are already reconciled by then) |
 | `workbook/` | `build_filing_sample.py` fixture generator (also used by the new tool's tests) and the route-B template with the extra columns |
 | `src/help.ts`, `flow/guide.ts`-style guide | new "Using the filing workbook" section; update "getting the files" |
 | Tests | see §7 |
@@ -142,9 +142,8 @@ Order of work: the adapter can only be finished after the filing tool's phase 1 
 
 ## 10. Open questions for Tobin
 
-Answered on 25 Nov 2026: one workbook per GSTIN; portal files always required and authoritative, drafts excluded; demo samples for testing.
+Answered on 25 Nov 2026: one workbook per GSTIN; same repo; portal files always required and authoritative, drafts excluded; demo samples for testing; only GST ledger flow takes the workbook later (Revenue reco and Input Reco do not); archive workbooks accepted; filed periods are locked for good, no unlock.
 
-1. Should Revenue reco and Input Reco also take the filing workbook in the same release (§5, last row), or annual first? Recommended: annual first.
-2. For clients not on the new tool, build route B (template with codes) at all, or keep registers as today? Recommended: build it later, it is cheap once the adapter exists.
-3. May the annual tool read an **archive** workbook per FY (so history can leave the live file)? Recommended: yes.
-4. Real anonymised client data for a final check, when available.
+1. Route B (a plain sales register with Section Code / Return Period columns, plus portal files) for clients not on the new tool: build it or not? Recommended: later, it is cheap once the adapter exists.
+2. GST ledger flow with the workbook: what exactly should it read? To be defined when that work is taken up.
+3. Real anonymised client data for a final check, when available.
