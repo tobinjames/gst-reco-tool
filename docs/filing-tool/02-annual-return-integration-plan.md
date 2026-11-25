@@ -8,7 +8,7 @@ Based on `docs/HANDOVER.md` as of Loader v0.19.
 
 - **Portal data is always required.** The annual return still loads the portal files (GSTR-1 JSON, GSTR-2B JSON, GSTR-3B PDFs, the auto-drafted GSTR-9 JSON). They are the source of truth for what was reported. The filing workbook does **not** replace them.
 - The workbook adds the **books detail**: invoice-level sales with section code and return period, purchases, the purchase-to-2B links (match codes), ITC / blocked-credit decisions and the filed 3B figures it recorded. Unfiled (draft) periods do not count.
-- One workbook per GSTIN. The filing tool lives in the same repo. A filed period is locked for good (corrections are amendments in a later period). Closed-year **archive** workbooks are accepted. Of the other tabs, only **GST ledger flow** will later take the workbook (Revenue reco and Input Reco already work from reconciled data and do not need it).
+- One workbook per GSTIN. The filing features are added **inside the current tool** (same repo, same HTML, `loader/src/filing/`), so the annual adapter is an internal module, not a second app. A filed period is locked for good (corrections are amendments in a later period). Closed-year **archive** workbooks are accepted. Of the other tabs, only **GST ledger flow** will later take the workbook (Revenue reco and Input Reco already work from reconciled data and do not need it).
 - Test data: the existing demo samples in the project files (`samples/input-reco`, `samples/revenue`); real anonymised files later.
 
 ## 1. The idea and what it means
@@ -90,11 +90,11 @@ The workbook is *our record of the books and our decisions*; portal files are *w
 | File | Change |
 |---|---|
 | `src/build.ts` `classify()` | new file kind `'Filing workbook'`, detected by a hidden metadata sheet (`_JJFiling`: schema, GSTIN, tool version) and sheet names; refuses an unknown schema version with a clear message; checks GSTIN against the client (existing warning for another GSTIN) |
-| `src/filingwb.ts` (new) | reads the workbook (reader in `xlsx.ts`), validates the contract (required columns, allowed codes, one row id per row, match code symmetry), verifies the audit chain and period hashes (warn, never block, but show "chain broken / changed after filing"), returns typed tables |
+| `src/filingwb.ts` (new) | reads the workbook (reader in `xlsx.ts`), validates the contract (required columns, allowed codes, one row id per row, match code symmetry), compares the recorded fingerprints of filed periods with the rows (warn, never block, show "changed after filing"), returns typed tables |
 | `src/gstr1.ts` | factor the "documents → RAW rows" step into a function callable by both the JSON reader and the workbook adapter |
 | `src/filingadapt.ts` (new) | sales → RAW_GSTR1 rows; 2B → RAW_2B; purchases → Books_Purchase; 3B → ThreeB; Match Codes → manual codes; ITC decisions → claimed/reversal columns |
 | `src/wizard.ts` | NEEDS lists unchanged for the portal files; the filing workbook is an optional books source that satisfies the registers and match codes ("workbook covers N of 12 months") |
-| `src/state.ts` | the filing workbook is a workbook and is not embedded in `_JJFiles` (as for every workbook); the annual workpaper records the workbook name, schema, last Seq and head hash it was built from, so a rebuild can tell the workbook changed |
+| `src/state.ts` | the filing workbook is a workbook and is not embedded in `_JJFiles` (as for every workbook); the annual workpaper records the workbook name, schema and last sign-off Seq it was built from, so a rebuild can tell the workbook changed |
 | `src/flow/*` | later, optional: GST ledger flow reads the workbook for books-side GST entries and ITC / output detail (scope to be agreed when it is taken up). Revenue reco and Input Reco are unchanged (Tobin: they are already reconciled by then) |
 | `workbook/` | `build_filing_sample.py` fixture generator (also used by the new tool's tests) and the route-B template with the extra columns |
 | `src/help.ts`, `flow/guide.ts`-style guide | new "Using the filing workbook" section; update "getting the files" |
@@ -121,9 +121,9 @@ Version: **v0.20** (minor, additive). No change to existing workbook templates, 
 
 - **The workbook is not the portal.** If staff amend online without recording it, the annual numbers drift. Mitigation: portal file wins, the optional difference report, a prompt to download the final GSTR-1 JSON of each period at year end when possible.
 - **Mapping errors are silent errors.** Hence the equivalence test and the rule to reuse `gstr1.ts` code, not to copy it.
-- **Hand-edited workbooks.** Staff will edit cells. The adapter validates the contract and reports, but cannot prevent bad data. The audit chain warns about edits only if the edit happened outside the new tool.
+- **Hand-edited workbooks.** Staff will edit cells. The adapter validates the contract and reports, but cannot prevent bad data. The sign-off sheet password stops accidental edits only; the fingerprint comparison reports changes to filed periods.
 - **HSN / quantity data** may be missing in small clients' manual entries; Table 17/18 then need the JSON route or manual input (as today).
-- **Immutability of the log is limited** (handover §3); the annual tool shows verification results but does not claim more.
+- **The sign-off log is only password-protected** (handover §8, Tobin's decision); the annual tool lists who prepared and reviewed each period but does not claim more.
 - **Schema changes.** A new GSTN format or a changed GSTR-9 means the contract and adapter must move together; version both.
 - **Unverified here:** exact key names in `rowmap.json` and the full set of 7A–7H keys, how Tables 17/18 are filled today, and whether GSTR-9 auto-population rules for FY 2025-26 changed. The builder must check these in the code and the GSTN offline tool, not rely on this plan.
 
