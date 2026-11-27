@@ -93,7 +93,7 @@ Derivation rules the tool should propose (all editable in config): GSTIN present
 ### 5.6 Scale
 - Excel allows 1,048,576 rows a sheet, but a workbook full of SUMIFS slows well before that. Rule of thumb for the design: **comfortable up to about 50,000 rows per table, painful past about 150,000**, and file size above about 30 MB is a nuisance on shared drives *(measure with the real generator and set the thresholds from tests)*.
 - Mitigations in v1: `Periods` formulas reference bounded named ranges; the tool shows rows per table and file size on open and **warns at 70% of the agreed limits**; one workbook per GSTIN; offer **"Close the year"**: write a read-only archive workbook for a finished FY and carry forward only open items (unmatched 2B, unfiled drafts, opening balances) into the current workbook. The annual tool then needs the archive for that FY (companion plan §6).
-- Design the code around a `ClientStore` interface (read/write rows by table and period, append audit entry) with the Excel workbook as adapter #1. See §11.
+- Design the code around a `ClientStore` interface (§11) with the Excel workbook as adapter #1 and a database as adapter #2 later.
 
 ## 6. Monthly lifecycle (what staff do)
 
@@ -197,11 +197,11 @@ Assessment against the current code (v0.19: about 17,000 lines of TypeScript in 
 
 ### 10.2 Module layout (Tobin, 27 Nov 2026: each module separate for easy maintenance)
 
-Each module is a folder with its own engine, screens (steps), workbook part, guide text, config and tests, and a **small public interface** (`index.ts`). **Modules do not call each other's code. They share data only through the client workbook tables defined in the contract (§5)**, so any module can be changed, tested or even switched off without touching another.
+Each module is a folder with its own engine, screens (steps), workbook part, guide text, config and tests, and a **small public interface** (`index.ts`). **Modules do not call each other's code. They share data only through the contract tables (§5), accessed through `ClientStore` (workbook sheets in v1, database tables later, §11)**, so any module can be changed, tested or even switched off without touching another.
 
 ```
 loader/src/filing/
-  common/        client workbook open/create/save, contract (sheet and column names, schema version),
+  common/        ClientStore interface and ExcelStore (workbook open/create/save; SqlStore later), contract (sheet and column names, schema version),
                  periods and lock rules, sign-off log writer, Lists/config loader, shared validators (GSTIN, state, rate)
   sales/         sales register mapping, manual entry grid, section-code and return-period derivation, Sales sheet writer
   gstr1/         GSTR-1 JSON generator, pre-generation validation, optional preview comparison, GSTR-1 summary
@@ -215,7 +215,7 @@ loader/src/filingbridge/   annual-return reader and adapter (reads the workbook,
 
 | Module | Owns (reads / writes workbook sheets) | May import | Must not import | Has its own |
 |---|---|---|---|---|
-| `common` | Client, Periods, SignOff, Lists | `util.ts`, `xlsx.ts`, `xlsxbook.ts`, `wpfront.ts`, `state.ts` | any other filing module | tests for contract, locking, sign-off |
+| `common` | Client, Periods, SignOff, Lists; `ClientStore` and its adapters | `util.ts`, `xlsx.ts`, `xlsxbook.ts`, `wpfront.ts`, `state.ts` | any other filing module | tests for contract, locking, sign-off |
 | `sales` | writes Sales | `common`, `register.ts` | `gstr1`, `gstr3b`, `itc` | tests for derivation and mapping; Help section "Sales" |
 | `gstr1` | reads Sales, Periods; writes Periods (JSON name, fingerprint) | `common`, `gstr1.ts` (the existing reader, for round-trip tests and preview) | `sales` (reads the Sales sheet, not its code) | tests: round trip, validations, preview; Help section |
 | `purchases` | writes Purchases, GSTR2B, Match | `common`, `recon.ts`, `gstr2b.ts`, `review.ts`, `settings.ts` | `itc`, `vendorconfirm` | golden test equal to Input Reco |
@@ -260,21 +260,44 @@ New: sales normaliser with section-code derivation, GSTR-1 generator, validators
 6. LibreOffice recalculation of the workbook: zero formula mismatches (as `flow_recalc.py`).
 7. Performance: a 50,000-row Sales sheet loads, validates and generates JSON in an agreed time on an ordinary office PC.
 
-## 11. Moving history out of Excel later
+## 11. Storage: Excel first, database planned (Tobin, 27 Nov 2026: "plan for databases as well; Excel is for the start")
 
-Do not wait for pain. Decide now:
-- `ClientStore` interface: `listPeriods`, `readRows(table, filter)`, `appendRows`, `voidRow`, `appendAudit`, `lockPeriod`. Excel adapter first.
-- Every row already has a stable `Row Id`, a period and a lock status, so exporting to a database later is a mechanical copy: tables `sales`, `purchases`, `gstr2b`, `match`, `itc`, `audit` with the same columns.
-- Likely targets: Cloudflare **D1** (SQLite; fine for a few million rows across clients, check size limits) or Postgres elsewhere. Then the Excel file becomes a **view/export** (current FY plus open items) while history sits in the database, and the annual tool reads either the workbook or an export.
-- The `SignOff` rows carry over unchanged as an event table (if stronger protection is wanted then, a server-side append-only log can be added at that point).
-- Triggers to move: any client above the §5.6 thresholds, concurrent editing by several staff, or a need for cross-client queries.
-- Costs of moving: client data on a server (confidentiality, backup, DPDP Act obligations *(take advice)*), access control per client, migration tests.
+Design rule from day one: **no module reads or writes Excel sheets directly. Every module goes through a `ClientStore` interface** in `common/store/`, so the storage can change without touching `sales`, `gstr1`, `itc` and the others.
+
+### 11.1 The interface
+`ClientStore` (one per client GSTIN): `open` / `create`, `readRows(table, filter)`, `appendRows(table, rows)`, `updateRow(table, rowId, changes)` (refused for locked periods), `voidRow`, `lockPeriod`, `listPeriods`, `appendSignOff(entry)`, `schemaVersion`, `stats` (row counts, size), `exportSnapshot()`. Tables are exactly the contract tables of §5 (`Sales`, `Purchases`, `GSTR2B`, `Match`, `ITC`, `Vendor_Confirm`, `GSTR3B`, `Periods`, `SignOff`, `Lists`). The rules about locked periods, stable `Row Id`s and no deletion live **once**, in `common`, above the adapters.
+
+### 11.2 Adapters
+| Adapter | When | Notes |
+|---|---|---|
+| `ExcelStore` | v1 | the workbook of §5; everything in memory in the browser; written back as a whole file |
+| `SqlStore` | later | the same tables in a database; talks to a small API; supports several users at once, queries across clients and periods, and server-side locking |
+| `ArchiveStore` (read-only) | v1 for closed years | reads an archive workbook (or database export) for a past FY, used by the annual return |
+
+### 11.3 The database when it comes
+- **Engine.** Two reasonable options, to be chosen when the need arrives: Cloudflare **D1** (SQLite) behind a Worker, which fits the free Cloudflare hosting already planned for about 50 users and is fine for small to mid-sized volumes *(verify limits)*; or **Postgres** (managed, e.g. Supabase / Neon / a firm server) if volume, concurrency or reporting grows. The tables map one to one from the contract; each row carries `gstin`, `row_id`, `period`, `status`, `locked`, `created_by/at`, `updated_by/at`, and an `audit` table records every change.
+- **What a database fixes that Excel cannot.** Several people working on one client at once; history over many years and many clients; fast search; real access control per client; an append-only sign-off log that users cannot edit (a database can enforce that, a workbook cannot); backups and restore points.
+- **What it costs.** Client data now sits on a server: confidentiality, backup, DPDP Act obligations *(take advice)*, who can see which client. A login becomes mandatory (Cloudflare Access or similar), and "Person" in the log then comes from the login. The tool stops being "files never leave the PC" for the filing tab, which is a deliberate change the firm must accept first. Excel exports remain for the client and for review.
+- **Offline.** Keep a "work from a workbook" mode for the cases where there is no server; it uses `ExcelStore`.
+
+### 11.4 Migration path (no big bang)
+1. **v1:** `ExcelStore` only; the interface and contract are real and tested.
+2. **Import/export:** a one-click "export snapshot" to the contract's table format (CSV or JSON per table, or the workbook) and "import snapshot", tested round-trip on `ExcelStore`. This is the same code a migration will use.
+3. **Read-only database mirror (optional):** publish snapshots to a database for search and reporting while Excel stays the record.
+4. **`SqlStore`:** switch a client to the database after its history is imported; the workbook becomes an export/view (current year plus open items). The annual return reads through `ClientStore`, so it works with either source.
+5. Per-client switch, not firm-wide, so the rollout can be gradual and reversible until a client has been on the database for a full quarter.
+
+### 11.5 Triggers to start the database work
+Any client above the §5.6 thresholds; more than one person needing to edit the same client at the same time; a need for cross-client queries (for example, all vendors with unconfirmed ITC across clients); or the firm deciding it wants a login and server-side log anyway.
+
+### 11.6 What to decide now vs later
+Now: the table list and columns, stable `Row Id`s, period and lock status on every row, `ClientStore` and the snapshot format, UTC timestamps, plain-value columns (no formulas stored as data). Later: engine choice, hosting, authentication, data-protection review, migration schedule.
 
 ## 12. Suggested phases
 
 | Phase | Content | Done when |
 |---|---|---|
-| 0 (2 days) | Freeze workbook contract; set up `filing/` skeleton, `common`, import-boundary test, tab behind a flag; decide open questions | contract doc merged, empty tab registered |
+| 0 (2 days) | Freeze workbook contract and `ClientStore` interface; set up `filing/` skeleton, `common`, import-boundary test, tab behind a flag; decide open questions | contract doc merged, empty tab registered |
 | 1 | `sales` (upload, manual entry, section codes) and `gstr1` (JSON, validation), sign-off log in `common` | JSON accepted by the portal on a test client |
 | 2 | `purchases` (save Input Reco matches into the workbook), `itc` (blocked credit), `vendorconfirm` | matching equals Input Reco on the golden case |
 | 3 | `gstr3b` (working, filed-value capture), optional preview check in `gstr1`, Close-the-year in `common`, optional Cloudflare Access login for the hosted copy | reviewer flow works end to end with 2 people |
@@ -283,6 +306,8 @@ Do not wait for pain. Decide now:
 Each row is one or more pull requests, one module each, with its own tests, Help section and module README.
 
 ## 13. Open questions for Tobin
+
+Database (27 Nov): planned as the next storage after Excel; engine, hosting and data-protection review are decided later (§11.6).
 
 Answered 25 Nov 2026: one workbook per GSTIN; the features go inside the current tool (same repo, `loader/src/filing/`); a filed period is locked for good with no unlock role (corrections are amendments in a later period); portal files stay required for the annual return and win over the workbook; the demo samples are the test data for now.
 
@@ -304,7 +329,7 @@ Still open (3 is answered, kept for numbering):
 
 You are building a new tool inside the GitHub repo `tobinjames/gst-reco-tool` (private; owner is James & James LLP, Tobin James). Read first, in this order: `docs/HANDOVER.md`, `docs/filing-tool/01-filing-tool-prompt-and-handover.md` (Part A is your specification and says what is open), `docs/filing-tool/02-annual-return-integration-plan.md`. Then read `loader/src/register.ts`, `recon.ts`, `gstr2b.ts`, `gstr1.ts`, `xlsxbook.ts`, `state.ts`, `wpfront.ts`, `util.ts` and `loader/test/`.
 
-**What to build.** New features inside the existing loader (`loader/`), as a new tab under `loader/src/filing/`, split into separate modules (`common`, `sales`, `gstr1`, `purchases`, `itc`, `vendorconfirm`, `gstr3b`, `config`, plus `filingbridge` for the annual return) as laid out in §10.2 of the handover: each module has its own folder, engine, steps, tests, Help section and README, and modules talk to each other only through the workbook sheets of the contract, never through each other's code. Follow the pattern of `flow/` and `revenue/` and register the tab through `wizard.ts`. Do not create a separate app. Reuse `register.ts`, `recon.ts`, `gstr2b.ts`, `gstr1.ts`, `xlsxbook.ts`, `state.ts`, `wpfront.ts`, `util.ts` and the Input Reco matching rather than rewriting them. One Excel workbook per client GSTIN holds all periods and grows with every filing. It must: take a sales register or manual entry; derive a section code (b2b, b2cl, b2cs, …) and return period per row, editable by the user; validate and generate the GSTR-1 JSON in the current GSTN format (use official sample payloads, never guess field names); optionally compare a portal GSTR-1 preview with the data; keep purchase-register vs 2B match codes in the workbook using the Input Reco matching; produce client vendor confirmation (PDF summary and Excel detail, re-importable) when there is no purchase register; suggest blocked credit (Sec 17(5)) by keywords showing the hit and the usual exceptions, which the user confirms or overrides; prepare GSTR-3B figures and record the values actually filed; keep a sign-off log (who prepared, who reviewed) in a sheet protected with a password. A filed period is locked for good (corrections are amendments in a later period). The workbook layout in §5 of the handover is a contract with the annual return: do not change it without a schema version bump and a migration.
+**What to build.** New features inside the existing loader (`loader/`), as a new tab under `loader/src/filing/`, split into separate modules (`common`, `sales`, `gstr1`, `purchases`, `itc`, `vendorconfirm`, `gstr3b`, `config`, plus `filingbridge` for the annual return) as laid out in §10.2 of the handover: each module has its own folder, engine, steps, tests, Help section and README, and modules talk to each other only through the contract tables via `ClientStore` (workbook sheets now, a database later), never through each other's code, and never read or write sheets directly. Follow the pattern of `flow/` and `revenue/` and register the tab through `wizard.ts`. Do not create a separate app. Reuse `register.ts`, `recon.ts`, `gstr2b.ts`, `gstr1.ts`, `xlsxbook.ts`, `state.ts`, `wpfront.ts`, `util.ts` and the Input Reco matching rather than rewriting them. One Excel workbook per client GSTIN holds all periods and grows with every filing. It must: take a sales register or manual entry; derive a section code (b2b, b2cl, b2cs, …) and return period per row, editable by the user; validate and generate the GSTR-1 JSON in the current GSTN format (use official sample payloads, never guess field names); optionally compare a portal GSTR-1 preview with the data; keep purchase-register vs 2B match codes in the workbook using the Input Reco matching; produce client vendor confirmation (PDF summary and Excel detail, re-importable) when there is no purchase register; suggest blocked credit (Sec 17(5)) by keywords showing the hit and the usual exceptions, which the user confirms or overrides; prepare GSTR-3B figures and record the values actually filed; keep a sign-off log (who prepared, who reviewed) in a sheet protected with a password. A filed period is locked for good (corrections are amendments in a later period). The workbook layout in §5 of the handover is a contract with the annual return: do not change it without a schema version bump and a migration.
 
 **Rules.**
 - Plan before coding. Post the plan (phases, risks, questions) and wait for Tobin's go. Build in the phases of §12; each phase is a pull request that passes `npm run check`.

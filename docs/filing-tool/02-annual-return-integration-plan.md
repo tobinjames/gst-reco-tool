@@ -87,7 +87,7 @@ The workbook is *our record of the books and our decisions*; portal files are *w
 
 ## 5. Changes in the current tool, by file
 
-The annual integration is its own module, **`loader/src/filingbridge/`** (handover §10.2): it reads the workbook sheets through the shared contract and returns the rows the annual tab already uses; it does not import the filing modules' code and writes nothing to the workbook. Files named `src/filingwb.ts` and `src/filingadapt.ts` below live in that folder, and its own tests and README sit with it. The only edits outside it are the small hooks listed (`build.ts`, `gstr1.ts`, `wizard.ts`, `state.ts`).
+The annual integration is its own module, **`loader/src/filingbridge/`** (handover §10.2): it reads the contract tables through `ClientStore` (the workbook today, a database snapshot or export later) and returns the rows the annual tab already uses; it does not import the filing modules' code and writes nothing to the workbook. Files named `src/filingwb.ts` and `src/filingadapt.ts` below live in that folder, and its own tests and README sit with it. The only edits outside it are the small hooks listed (`build.ts`, `gstr1.ts`, `wizard.ts`, `state.ts`).
 
 | File | Change |
 |---|---|
@@ -105,6 +105,8 @@ The annual integration is its own module, **`loader/src/filingbridge/`** (handov
 Version: **v0.20** (minor, additive). No change to existing workbook templates, so no migration of saved workpapers.
 
 ## 6. Scale and archives
+
+Storage will later move to a database (handover §11). The bridge therefore never opens sheets itself: it asks `ClientStore` for tables, so the annual return keeps working when a client's history lives in a database, an archive workbook, or an exported snapshot.
 
 - A multi-year workbook may contain several FYs. The adapter filters to the client's FY plus PY and NY windows before any heavy work; large sheets are read once in a streaming pass (check the current `xlsx.ts` Reader memory use with a 100,000-row sheet and set a limit with a clear message).
 - If the new tool's "Close the year" archive (handover §5.6) is used, the annual tool accepts the **archive workbook of that FY** plus the current workbook for the next-year April to October window. The adapter treats archives as the same contract with a `Kind = Archive` flag.
