@@ -87,6 +87,8 @@ The workbook is *our record of the books and our decisions*; portal files are *w
 
 ## 5. Changes in the current tool, by file
 
+The annual integration is its own module, **`loader/src/filingbridge/`** (handover §10.2): it reads the workbook sheets through the shared contract and returns the rows the annual tab already uses; it does not import the filing modules' code and writes nothing to the workbook. Files named `src/filingwb.ts` and `src/filingadapt.ts` below live in that folder, and its own tests and README sit with it. The only edits outside it are the small hooks listed (`build.ts`, `gstr1.ts`, `wizard.ts`, `state.ts`).
+
 | File | Change |
 |---|---|
 | `src/build.ts` `classify()` | new file kind `'Filing workbook'`, detected by a hidden metadata sheet (`_JJFiling`: schema, GSTIN, tool version) and sheet names; refuses an unknown schema version with a clear message; checks GSTIN against the client (existing warning for another GSTIN) |

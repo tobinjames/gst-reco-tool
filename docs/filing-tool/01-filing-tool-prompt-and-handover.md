@@ -175,7 +175,7 @@ Because the filing features live inside the same single-file HTML as the rest of
 
 ### 10.1 Is it viable without making the tool hard to maintain? Yes, with rules.
 Assessment against the current code (v0.19: about 17,000 lines of TypeScript in `loader/src`; each tab already owns a folder: `flow/` has engine, workbook, ui and guide; `revenue/` likewise; the wizard (`wizard.ts`) lists tabs, steps and file needs in tables, `STEPS` and `NEEDS`; tests per module):
-- A new tab is the pattern the code already supports. The filing features go in **`loader/src/filing/`** with the same shape (`sales.ts` normalise and section codes, `gstr1gen.ts`, `validate.ts`, `preview.ts`, `gstr3b.ts`, `blocked.ts`, `vendorconfirm.ts`, `workbook.ts`, `ui.ts`, `guide.ts`).
+- A new tab is the pattern the code already supports. The filing features go under **`loader/src/filing/`**, split into separate modules (§10.2), each with the same shape as `flow/` and `revenue/` (engine, workbook writer, ui, guide, tests).
 - Matching purchases against 2B is **not a new feature**: Input Reco already does it. The filing tab reuses it and only adds saving the result into the client workbook (match codes) and the blocked-credit and vendor-confirmation steps. This keeps the most complex logic in one place.
 - The workbook reader for the annual return sits in the same code base, so the annual adapter is an internal function call, with no second copy of the code to keep in step.
 - Size: the filing work is roughly 6,000 to 9,000 new lines (rough estimate; mostly the GSTR-1 generator and validations, the 3B builder, the manual-entry grid and the workbook), i.e. about +40% on today's code. The built HTML is 3.7 MB; the main addition is a small PDF library (the vendor-confirmation PDF), which should be small *(measure before choosing)*.
@@ -195,10 +195,50 @@ Assessment against the current code (v0.19: about 17,000 lines of TypeScript in 
 
 **What would have to change first:** nothing blocking. Do before building: (a) freeze the workbook contract; (b) add the new tab id and an empty steps table to `wizard.ts` behind a flag; (c) agree the size budget.
 
-### 10.2 Stack and repository
+### 10.2 Module layout (Tobin, 27 Nov 2026: each module separate for easy maintenance)
+
+Each module is a folder with its own engine, screens (steps), workbook part, guide text, config and tests, and a **small public interface** (`index.ts`). **Modules do not call each other's code. They share data only through the client workbook tables defined in the contract (§5)**, so any module can be changed, tested or even switched off without touching another.
+
+```
+loader/src/filing/
+  common/        client workbook open/create/save, contract (sheet and column names, schema version),
+                 periods and lock rules, sign-off log writer, Lists/config loader, shared validators (GSTIN, state, rate)
+  sales/         sales register mapping, manual entry grid, section-code and return-period derivation, Sales sheet writer
+  gstr1/         GSTR-1 JSON generator, pre-generation validation, optional preview comparison, GSTR-1 summary
+  purchases/     saving Input Reco matches (match codes) into Purchases / GSTR2B / Match sheets; no matching logic of its own
+  itc/           blocked-credit (Sec 17(5)) keyword engine, suggestions, confirmations, schedule
+  vendorconfirm/ vendor-wise statement, client PDF summary, client Excel detail, re-import of responses
+  gstr3b/        3B working from workbook data, filed-value capture, later the 3B JSON
+  config/        dated GSTN config: JSON schema versions, thresholds, HSN rules, keyword groups, section codes
+loader/src/filingbridge/   annual-return reader and adapter (reads the workbook, returns the rows the annual tab already uses)
+```
+
+| Module | Owns (reads / writes workbook sheets) | May import | Must not import | Has its own |
+|---|---|---|---|---|
+| `common` | Client, Periods, SignOff, Lists | `util.ts`, `xlsx.ts`, `xlsxbook.ts`, `wpfront.ts`, `state.ts` | any other filing module | tests for contract, locking, sign-off |
+| `sales` | writes Sales | `common`, `register.ts` | `gstr1`, `gstr3b`, `itc` | tests for derivation and mapping; Help section "Sales" |
+| `gstr1` | reads Sales, Periods; writes Periods (JSON name, fingerprint) | `common`, `gstr1.ts` (the existing reader, for round-trip tests and preview) | `sales` (reads the Sales sheet, not its code) | tests: round trip, validations, preview; Help section |
+| `purchases` | writes Purchases, GSTR2B, Match | `common`, `recon.ts`, `gstr2b.ts`, `review.ts`, `settings.ts` | `itc`, `vendorconfirm` | golden test equal to Input Reco |
+| `itc` | reads Purchases, GSTR2B; writes ITC | `common`, `config` | `purchases` code | keyword tests with false-positive cases |
+| `vendorconfirm` | reads GSTR2B; writes Vendor_Confirm | `common`, PDF library | `itc`, `purchases` code | PDF and Excel round trip |
+| `gstr3b` | reads Sales, Purchases, ITC, Match; writes GSTR3B | `common`, `gstr3b.ts` reader | `gstr1` code | tests on demo samples |
+| `filingbridge` | reads the whole workbook; writes nothing | `common` contract only, `gstr1.ts`, `gstr2b.ts`, `register.ts` shapes | UI code | equivalence tests (companion plan §7) |
+
+Rules that make this work:
+1. **One module per pull request** (plus its Help section and tests); the order is in §12. A module that is not finished can stay behind a flag, and the tab shows only finished modules.
+2. A module's `index.ts` exports only: its steps (for `wizard.ts`), its workbook sheet writers and readers, and its config. Anything else is private. A lint / test check (an import-boundary test, run in `npm test`) fails the build if a module imports a forbidden one.
+3. The contract (`common/contract.ts`, mirrored in `workbook-contract.md`) is the only coupling. Changing a column means bumping the schema version and updating every module that touches that sheet, so the module table above also says who is affected.
+4. Each module has its own section in `help.ts` and its own Instructions text in the workbook, so a change to one module changes one place.
+5. Each module carries a short `README.md` in its folder: purpose, sheets read and written, config files, tests, known limits, who to ask. New contributors start there.
+6. Config files (`config/`) are dated and versioned per module; a GSTN format change touches `config/` and one module only.
+7. Shared logic that two modules need goes to `common` (if it is about the workbook) or `util.ts` (if it is general), never copied.
+
+Failure containment: if `gstr3b` has a bug, `gstr1` and the existing tabs still work. The annual return (`filingbridge`) reads only sheets, so it is unaffected by changes inside a module as long as the contract holds.
+
+### 10.3 Stack and repository
 TypeScript + Vite as today, no new framework unless the manual-entry grid needs one (decide in week 1). XLSX writing with `xlsx.ts` / `xlsxbook.ts` / `wpfront.ts`. PDF via a small pinned library, loaded as part of the single file. **Same repository, same loader**: `loader/src/filing/`. This reverses the earlier "new repo" and "new `filing/` folder" options. The workbook contract lives in `docs/filing-tool/workbook-contract.md`, with one fixture generator used by the tests.
 
-### 10.3 Reuse map (what the filing module takes from existing code)
+### 10.4 Reuse map (what the filing modules take from existing code)
 | Need | Reuse |
 |---|---|
 | register reading and mapping | `register.ts` (+ new sales fields) |
@@ -211,7 +251,7 @@ TypeScript + Vite as today, no new framework unless the manual-entry grid needs 
 | GSTIN checks, FY maths, INR formatting | `util.ts` |
 New: sales normaliser with section-code derivation, GSTR-1 generator, validators, preview comparer, 3B builder, blocked-credit engine, vendor confirmation exports, sign-off log writer.
 
-### 10.4 Testing (acceptance)
+### 10.5 Testing (acceptance)
 1. Generate → parse round trip for GSTR-1 on synthetic data covering every section.
 2. The GSTN sample payloads in `test/fixtures/gstn/` are reproduced by the generator within tolerance.
 3. Workbook grows: three periods loaded, then a fourth; earlier rows byte-identical; edits to a filed period's rows are refused by the tool; the sign-off sheet is protected.
@@ -234,11 +274,13 @@ Do not wait for pain. Decide now:
 
 | Phase | Content | Done when |
 |---|---|---|
-| 0 (2 days) | Freeze workbook contract; decide open questions; get real samples | contract doc merged |
-| 1 | Workbook create/open/append, Sales upload + manual entry, section codes, validation, **GSTR-1 JSON**, sign-off log, Periods | JSON accepted by the portal on a test client |
-| 2 | Purchases + 2B + matching + `Match`; blocked-credit suggestions; vendor confirmation PDF+Excel | matching equals current tool on golden case |
-| 3 | 3B working, filed-value capture, optional preview check, Close-the-year, optional Cloudflare Access login for the hosted copy | reviewer flow works end to end with 2 people |
-| 4 | Annual-return adapter (companion plan), 3B JSON | annual numbers unchanged vs the register route; workbook vs portal differences listed |
+| 0 (2 days) | Freeze workbook contract; set up `filing/` skeleton, `common`, import-boundary test, tab behind a flag; decide open questions | contract doc merged, empty tab registered |
+| 1 | `sales` (upload, manual entry, section codes) and `gstr1` (JSON, validation), sign-off log in `common` | JSON accepted by the portal on a test client |
+| 2 | `purchases` (save Input Reco matches into the workbook), `itc` (blocked credit), `vendorconfirm` | matching equals Input Reco on the golden case |
+| 3 | `gstr3b` (working, filed-value capture), optional preview check in `gstr1`, Close-the-year in `common`, optional Cloudflare Access login for the hosted copy | reviewer flow works end to end with 2 people |
+| 4 | `filingbridge` (annual-return adapter, companion plan), later 3B JSON | annual numbers unchanged vs the register route; workbook vs portal differences listed |
+
+Each row is one or more pull requests, one module each, with its own tests, Help section and module README.
 
 ## 13. Open questions for Tobin
 
@@ -262,7 +304,7 @@ Still open (3 is answered, kept for numbering):
 
 You are building a new tool inside the GitHub repo `tobinjames/gst-reco-tool` (private; owner is James & James LLP, Tobin James). Read first, in this order: `docs/HANDOVER.md`, `docs/filing-tool/01-filing-tool-prompt-and-handover.md` (Part A is your specification and says what is open), `docs/filing-tool/02-annual-return-integration-plan.md`. Then read `loader/src/register.ts`, `recon.ts`, `gstr2b.ts`, `gstr1.ts`, `xlsxbook.ts`, `state.ts`, `wpfront.ts`, `util.ts` and `loader/test/`.
 
-**What to build.** New features inside the existing loader (`loader/`), as a new tab with its own folder `loader/src/filing/`, following the pattern of `flow/` and `revenue/` (engine, workbook writer, ui, guide, tests) and registered through `wizard.ts`. Do not create a separate app. Reuse `register.ts`, `recon.ts`, `gstr2b.ts`, `gstr1.ts`, `xlsxbook.ts`, `state.ts`, `wpfront.ts`, `util.ts` and the Input Reco matching rather than rewriting them. One Excel workbook per client GSTIN holds all periods and grows with every filing. It must: take a sales register or manual entry; derive a section code (b2b, b2cl, b2cs, …) and return period per row, editable by the user; validate and generate the GSTR-1 JSON in the current GSTN format (use official sample payloads, never guess field names); optionally compare a portal GSTR-1 preview with the data; keep purchase-register vs 2B match codes in the workbook using the Input Reco matching; produce client vendor confirmation (PDF summary and Excel detail, re-importable) when there is no purchase register; suggest blocked credit (Sec 17(5)) by keywords showing the hit and the usual exceptions, which the user confirms or overrides; prepare GSTR-3B figures and record the values actually filed; keep a sign-off log (who prepared, who reviewed) in a sheet protected with a password. A filed period is locked for good (corrections are amendments in a later period). The workbook layout in §5 of the handover is a contract with the annual return: do not change it without a schema version bump and a migration.
+**What to build.** New features inside the existing loader (`loader/`), as a new tab under `loader/src/filing/`, split into separate modules (`common`, `sales`, `gstr1`, `purchases`, `itc`, `vendorconfirm`, `gstr3b`, `config`, plus `filingbridge` for the annual return) as laid out in §10.2 of the handover: each module has its own folder, engine, steps, tests, Help section and README, and modules talk to each other only through the workbook sheets of the contract, never through each other's code. Follow the pattern of `flow/` and `revenue/` and register the tab through `wizard.ts`. Do not create a separate app. Reuse `register.ts`, `recon.ts`, `gstr2b.ts`, `gstr1.ts`, `xlsxbook.ts`, `state.ts`, `wpfront.ts`, `util.ts` and the Input Reco matching rather than rewriting them. One Excel workbook per client GSTIN holds all periods and grows with every filing. It must: take a sales register or manual entry; derive a section code (b2b, b2cl, b2cs, …) and return period per row, editable by the user; validate and generate the GSTR-1 JSON in the current GSTN format (use official sample payloads, never guess field names); optionally compare a portal GSTR-1 preview with the data; keep purchase-register vs 2B match codes in the workbook using the Input Reco matching; produce client vendor confirmation (PDF summary and Excel detail, re-importable) when there is no purchase register; suggest blocked credit (Sec 17(5)) by keywords showing the hit and the usual exceptions, which the user confirms or overrides; prepare GSTR-3B figures and record the values actually filed; keep a sign-off log (who prepared, who reviewed) in a sheet protected with a password. A filed period is locked for good (corrections are amendments in a later period). The workbook layout in §5 of the handover is a contract with the annual return: do not change it without a schema version bump and a migration.
 
 **Rules.**
 - Plan before coding. Post the plan (phases, risks, questions) and wait for Tobin's go. Build in the phases of §12; each phase is a pull request that passes `npm run check`.
@@ -270,7 +312,7 @@ You are building a new tool inside the GitHub repo `tobinjames/gst-reco-tool` (p
 - Never hard-code thresholds, HSN digit rules, field lists or keyword groups; keep them in dated config, and mark anything uncertain *(verify)* and check it against the GST portal or developer portal.
 - Workbooks: Aptos font, Index sheet with links, one Instructions sheet, Summary sheet, "Back to Index" links, J&J colour #2C388E and the logo from `loader/src/brand/`, one plain readable formula per cell (SUMIFS / INDEX / MATCH; no macros, no Excel 365 functions). Prepared by / Reviewed by block on Index.
 - Client files never leave the user's PC; there is no server component.
-- Keep the module self-contained (§10.1 rules): nothing outside `wizard.ts` / `main.ts` imports from `filing/`; no behaviour change to existing tabs in filing PRs; report the built HTML size in each PR.
+- Keep every module self-contained (§10.1 and §10.2 rules): nothing outside `wizard.ts` / `main.ts` imports from `filing/`; modules never import each other (an import-boundary test enforces it); one module per pull request; no behaviour change to existing tabs in filing PRs; report the built HTML size in each PR.
 - Tests: round-trip GSTR-1 generation through `gstr1.ts`; locked-period tests (edits to a filed period are refused); matching golden case equal to the current tool; LibreOffice recalculation with zero mismatches; real-file cases only after anonymising GSTINs and names (scripts/anonymise.ts). Do not commit real client data.
 - Do not produce source zips. Deliver the built HTML (release workflow) and the PR link. Update `loader/src/help.ts`-style in-app help for every user-visible change.
 - Ask Tobin about the open questions in §13 before building the parts that depend on them; start with the parts that do not.
